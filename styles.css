@@ -915,3 +915,5 @@ body:has(#toast:not([hidden])) .fab{transform:translateY(-62px)}
 .login-links{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .login-links .linkbtn{font-size:.85rem}
 #forgotBtn{justify-self:auto}
+.remind-tag{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.remind-tag .bell{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round}
