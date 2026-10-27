@@ -721,7 +721,69 @@ export function initPlus(ctx) {
   }
   render();
 
+  // ================= Rangement automatique des courses =================
+  // Quand un article est coché dans les courses, il va là où il a sa place :
+  // déjà connu (frigo ou rangement) → on le remet ; sinon d'après son rayon et son nom.
+  const nrm = x => String(x || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+  const sameName = (a, b) => { const x = nrm(a), y = nrm(b); return x === y || x.replace(/s$/, "") === y.replace(/s$/, ""); };
+  const newId = () => "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  function frigoCatOf(name, cat) {
+    const n = nrm(name);
+    if (/(viande|poulet|boeuf|porc|veau|jambon|lardon|saucisse|steak|poisson|saumon|cabillaud|crevette|dinde|chorizo|merguez|bacon|filet)/.test(n)) return "Viandes & poissons";
+    if (/(lait|yaourt|yogourt|fromage|beurre|creme|oeuf|emmental|mozzarella|comte|skyr|petit suisse|feta|chevre|ricotta)/.test(n)) return "Produits laitiers";
+    if (/(sauce|ketchup|mayonnaise|moutarde|pesto|cornichon)/.test(n)) return "Sauces & condiments";
+    if (cat === "Fruits & légumes") return "Fruits & légumes";
+    if (cat === "Boissons") return "Boissons";
+    return "Autre";
+  }
+  function meubleFor(name, cat) {
+    const n = nrm(name), t = type => S.meubles.find(m => m.type === type);
+    const bySuggest = S.meubles.find(m => (m.suggest || []).some(sg => sameName(Array.isArray(sg) ? sg[0] : sg, name)));
+    if (bySuggest) return bySuggest;
+    if (cat === "Surgelés") return t("tiroirs");
+    if (cat === "Maison & hygiène") {
+      if (/(gel douche|shampo|apres-shampo|masque cheveux|savon|soin cheveux|coiffant)/.test(n)) return t("douche") || t("sdb");
+      if (/(papier toilette|wc|desodorisant|toilette)/.test(n)) return t("wc") || t("evier");
+      if (/(dentifrice|brosse a dent|coton|rasoir|deodorant|creme|maquillage|demaquill|serviette hygien|tampon|parfum|visage)/.test(n)) return t("sdb");
+      return t("evier");
+    }
+    if (cat === "Épicerie" || cat === "Animaux") return t("placard");
+    return null;
+  }
+  function ranger(item) {
+    const name = item.name, cat = item.cat;
+    const f = S.frigo.find(x => sameName(x.name, name));
+    if (f) {
+      write(updateDoc(refOf("frigo", f.id), { qty: (f.qty > 0 ? f.qty : 0) + 1, at: Date.now() }));
+      return { k: "frigo", id: f.id, prev: { qty: f.qty || 0, at: f.at || 0 }, where: "le frigo" };
+    }
+    const st = S.stock.find(x => sameName(x.name, name));
+    if (st) {
+      write(updateDoc(refOf("stock", st.id), { level: "plein", at: Date.now() }));
+      const m = meubleOf(st);
+      return { k: "stock", id: st.id, prev: { level: st.level || "plein", at: st.at || 0 }, where: m ? m.name : "les rangements" };
+    }
+    if (cat === "Frais" || cat === "Fruits & légumes" || cat === "Boissons") {
+      const id = newId();
+      write(setDoc(refOf("frigo", id), { name, cat: frigoCatOf(name, cat), qty: 1, dlc: "", by: me(), at: Date.now() }));
+      return { k: "frigo", id, created: true, where: "le frigo" };
+    }
+    const m = meubleFor(name, cat);
+    if (m) {
+      const id = newId();
+      write(setDoc(refOf("stock", id), { name, who: "deux", meuble: m.id, level: "plein", by: me(), at: Date.now() }));
+      return { k: "stock", id, created: true, where: m.name };
+    }
+    return null;
+  }
+  function deranger(info) {
+    if (!info || !info.k || !info.id) return;
+    if (info.created) write(deleteDoc(refOf(info.k, info.id)));
+    else if (info.prev) write(updateDoc(refOf(info.k, info.id), info.prev));
+  }
+
   return {
+    ranger, deranger,
     showMenu: () => { if (UI.view) open(UI.view); else render(); },
     // Appelé quand un article est coché dans les courses : le stock correspondant repasse à « Plein ».
     restock(name) {

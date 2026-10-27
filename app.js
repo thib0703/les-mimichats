@@ -112,7 +112,7 @@ $("logout").onclick = () => { openSheet(false); signOut(auth); };
 function setSync(state, label) { const s = $("sync"); s.className = "sync " + state; s.title = label; }
 
 // ================= COURSES =================
-let courses = [], habitues = {}, confirmClear = false, showCart = false;
+let courses = [], habitues = {}, confirmClear = false, showCart = false, achats = [], showHist = false;
 
 // Rayon : « auto » devine d'après les achats précédents puis le nom de l'article.
 function renderCats() {
@@ -149,6 +149,36 @@ $("addCourse").onsubmit = e => {
   $("courseName").focus();
 };
 
+// Cocher un article : il est gardé dans l'historique des achats et rangé à sa place (frigo, placard…).
+// Le décocher annule les deux.
+function toggleCourse(i) {
+  if (!i.done) {
+    const info = plusApi ? plusApi.ranger(i) : null;
+    const aid = "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    write(setDoc(ref("achats", aid), { name: i.name, cat: i.cat || "Autre", qty: i.qty || "", by: me, at: Date.now(), day: today() }));
+    write(updateDoc(ref("courses", i.id), { done: true, rangement: info || null, achatId: aid }));
+    if (info) toast(`${i.name} → ${info.where}`, { label: "Pas rangé", fn: () => { plusApi && plusApi.deranger(info); write(updateDoc(ref("courses", i.id), { rangement: null })); } });
+  } else {
+    if (i.rangement && plusApi) plusApi.deranger(i.rangement);
+    if (i.achatId) write(deleteDoc(ref("achats", i.achatId)));
+    write(updateDoc(ref("courses", i.id), { done: false, rangement: null, achatId: null }));
+  }
+}
+function histSection(todoNames) {
+  const limit = addDays(today(), -30);
+  const list = achats.filter(a => (a.day || "") >= limit).sort((a, b) => (b.at || 0) - (a.at || 0));
+  if (!list.length) return "";
+  const dayLabel = d => d === today() ? "Aujourd'hui" : d === addDays(today(), -1) ? "Hier" : cap(FMT_SHORT.format(parse(d)));
+  let body = "";
+  if (showHist) {
+    const days = [...new Set(list.map(a => a.day))];
+    body = days.map(d => `<p class="hist-day">${esc(dayLabel(d))}</p><ul class="list shop-list hist-list">${list.filter(a => a.day === d).map(a => `<li class="row">
+        <span class="hist-dot ${esc(a.by || "deux")}" aria-hidden="true"></span>
+        <span class="txt">${esc(a.name)}${a.qty ? `<small>${esc(a.qty)}</small>` : ""}</span>
+        ${todoNames.has(a.name.toLowerCase()) ? `<span class="hist-in">dans la liste</span>` : `<button class="mini" type="button" data-readd="${esc(a.id)}" aria-label="Remettre ${esc(a.name)} dans la liste">+ liste</button>`}</li>`).join("")}</ul>`).join("");
+  }
+  return `<section class="aisle cart hist"><div class="toolbar"><button type="button" class="cart-toggle" data-act="hist" aria-expanded="${showHist}">Achats des 30 derniers jours<span>${list.length}</span></button></div>${body}</section>`;
+}
 function rowCourse(i) {
   return `<li class="row${i.done ? " done" : ""}">
     <button class="check" type="button" data-toggle="${esc(i.id)}" aria-label="${i.done ? "Remettre dans la liste" : "Mettre dans le panier"}">${CHECK}</button>
@@ -191,6 +221,7 @@ function renderCourses() {
         : `<button class="linkbtn" data-act="clear" type="button">Vider le panier</button>`) +
       `</div>${showCart || !todo.length ? `<ul class="list shop-list">${done.map(rowCourse).join("")}</ul>` : ""}</section>`;
   }
+  h += histSection(new Set(todo.map(c => c.name.toLowerCase())));
   $("courseList").innerHTML = h;
 }
 $("quickChips").onclick = e => { const b = e.target.closest("[data-quick]"); if (b) addCourse(b.dataset.quick, b.dataset.qcat || "Autre"); };
@@ -201,8 +232,9 @@ $("courseList").onclick = e => {
       { key: "cat", label: "Rayon", type: "select", options: CATS.map(c => [c, c]) }],
     onSave: v => write(updateDoc(ref("courses", i.id), v)), extra: [{ label: "Supprimer", danger: true, fn: () => ui.removeWithUndo(ref("courses", i.id), i, i.name) }] }); return; }
   const t = e.target.closest("[data-toggle],[data-del],[data-act]"); if (!t) return;
-  if (t.dataset.toggle) { const i = courses.find(c => c.id === t.dataset.toggle);
-    if (i) { write(updateDoc(ref("courses", i.id), { done: !i.done })); if (!i.done && plusApi) plusApi.restock(i.name); } }
+  if (t.dataset.toggle) { const i = courses.find(c => c.id === t.dataset.toggle); if (i) toggleCourse(i); }
+  else if (t.dataset.readd) { const a = achats.find(x => x.id === t.dataset.readd); if (a && addCourse(a.name, a.cat || guessCourseCat(a.name), a.qty)) toast(`${a.name} remis dans la liste`); }
+  else if (t.dataset.act === "hist") { showHist = !showHist; renderCourses(); }
   else if (t.dataset.del) { const i = courses.find(c => c.id === t.dataset.del); if (i) ui.removeWithUndo(ref("courses", i.id), i, i.name); }
   else if (t.dataset.act === "cart") { showCart = !showCart; renderCourses(); }
   else if (t.dataset.act === "clear") { confirmClear = true; renderCourses(); }
@@ -858,6 +890,11 @@ function start(user) {
   }, onErr));
   unsub.push(onSnapshot(col("events"), s => { events = toList(s); renderEvents(); renderToday(); }, onErr));
   unsub.push(onSnapshot(col("taches"), s => { tasks = toList(s); renderTasks(); renderToday(); }, onErr));
+  unsub.push(onSnapshot(col("achats"), s => {
+    achats = toList(s); renderCourses();
+    // On ne garde que 4 mois d'historique.
+    const old = addDays(today(), -120); achats.filter(a => a.day && a.day < old).slice(0, 50).forEach(a => write(deleteDoc(ref("achats", a.id))));
+  }, onErr));
   unsub.push(onSnapshot(col("envies"), s => { wishes = toList(s); renderWishes(); plusApi && plusApi.tick(); }, onErr));
   unsub.push(onSnapshot(col("repas"), s => { repas = {}; s.docs.forEach(d => { repas[d.id] = d.data(); }); renderRepas(); renderToday(); }, onErr));
   unsub.push(onSnapshot(foyerDoc, s => {

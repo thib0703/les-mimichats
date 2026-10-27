@@ -918,3 +918,9 @@ body:has(#toast:not([hidden])) .fab{transform:translateY(-62px)}
 .remind-tag{display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
 .remind-tag .bell{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round}
 .field.is-off{opacity:.45}
+/* Historique des achats */
+.hist-day{margin:10px 0 6px;font-size:.78rem;font-weight:600;color:var(--muted)}
+.hist-list .row{padding:9px 12px}
+.hist-dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--deux)}
+.hist-dot.thib{background:var(--thib)} .hist-dot.eva{background:var(--eva)}
+.hist-in{flex:none;font-size:.72rem;color:var(--muted)}
