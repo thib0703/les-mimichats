@@ -321,7 +321,7 @@ function rowEvent(occ, inList) {
     EV_RECUR[e.recur || "none"], EV_REMIND[e.remind || "none"]
   ].filter(Boolean).join(" · ");
   return `<li class="row ev ev-${esc(e.who)}">
-      <span class="when">${cont ? "suite" : e.time ? esc(e.time) : "—"}${!cont && !e.time ? "<small>journée</small>" : ""}</span>
+      <span class="when">${cont ? "suite" : e.time ? esc(e.time) : "—"}${!cont && !e.time ? "<small>journée</small>" : !cont && e.endTime ? `<small>→ ${esc(e.endTime)}</small>` : ""}</span>
       <span class="txt" data-edit-ev="${esc(e.id)}" data-occ="${occ.start}">${esc(e.title)}${meta ? `<small>${esc(meta)}</small>` : ""}</span>
       <span class="who ${esc(e.who)}">${esc(whoName(e.who))}</span>
       <button class="del" type="button" data-del-ev="${esc(e.id)}" data-occ="${occ.start}" aria-label="Supprimer ${esc(e.title)}">×</button></li>`;
@@ -341,7 +341,8 @@ function renderEvents() {
   $("agendaSum").textContent = (todayN ? `${todayN} aujourd'hui` : "Rien aujourd'hui") + (week ? `, ${week} cette semaine` : "");
   if (isMonth) {
     renderCal();
-    const dayEvents = eventsOn(events, selDay);
+    // Journées entières d'abord, puis par heure de début.
+    const dayEvents = eventsOn(events, selDay).sort((a, b) => (a.dayIndex > 1 || !a.e.time ? "" : a.e.time).localeCompare(b.dayIndex > 1 || !b.e.time ? "" : b.e.time));
     $("eventList").innerHTML = `<section class="day-panel"><div class="block-head"><h3>${esc(dayLabel(selDay))}</h3></div>` + (cycleApi ? cycleApi.dayDetail(selDay) : "") +
       (dayEvents.length ? `<ul class="list ev-list">${dayEvents.map(o => rowEvent(o)).join("")}</ul>` : `<button type="button" class="empty-day" data-new-ev="${selDay}">Rien de prévu. Touchez pour ajouter un événement.</button>`) + `</section>`;
     return;
@@ -371,14 +372,27 @@ const EV_FIELDS = () => [
   { key: "title", label: "Événement", type: "text", required: true },
   { key: "date", label: "Date", type: "date", required: true },
   { key: "endDate", label: "Jusqu'au (plusieurs jours)", type: "date" },
-  { key: "time", label: "Heure", type: "time" },
+  { key: "allDay", label: "Toute la journée", type: "checkbox" },
+  { key: "time", label: "Début", type: "time" },
+  { key: "endTime", label: "Fin (facultatif)", type: "time" },
   { key: "who", label: "Pour qui", type: "who" },
   { key: "recur", label: "Se répète", type: "select", options: Object.entries({ none: "Non", ...EV_RECUR }).filter(([k]) => k !== "none" || true).map(([k, l]) => [k, l || "Non"]) },
   { key: "remind", label: "Rappel", type: "select", options: [["none", "Aucun"], ["veille", "La veille à 20 h"], ["matin", "Le jour même à 8 h"], ["1h", "1 h avant"]] }
 ];
+// Dans la fiche : « Toute la journée » coché grise les heures (champs ed3, ed4 et ed5).
+function bindAllDay() {
+  const cb = document.getElementById("ed3"), t1 = document.getElementById("ed4"), t2 = document.getElementById("ed5");
+  if (!cb || !t1 || !t2) return;
+  const sync = () => { for (const t of [t1, t2]) { t.disabled = cb.checked; t.closest(".field").classList.toggle("is-off", cb.checked); } };
+  cb.addEventListener("change", sync); sync();
+}
 function cleanEvent(v) {
   if (v.endDate && v.endDate <= v.date) v.endDate = "";
   if (!v.recur) v.recur = "none"; if (!v.remind) v.remind = "none";
+  // « Toute la journée » : pas d'horaire. Sans heure de début, pas d'heure de fin.
+  if (v.allDay || !v.time) { v.time = ""; v.endTime = ""; v.allDay = true; }
+  if (v.endTime && v.endTime <= v.time && !v.endDate) v.endTime = "";
+  if (v.remind === "1h" && !v.time) v.remind = "matin";
   return v;
 }
 function handleEventClick(e) {
@@ -397,20 +411,22 @@ function handleEventClick(e) {
     else ui.removeWithUndo(ref("events", ev.id), ev, ev.title);
     return;
   }
-  ui.openEditor({ title: "Modifier l'événement", data: { recur: "none", remind: "none", ...ev }, fields: EV_FIELDS(),
+  ui.openEditor({ title: "Modifier l'événement", data: { recur: "none", remind: "none", endTime: "", ...ev, allDay: !ev.time }, fields: EV_FIELDS(),
     onSave: v => write(updateDoc(ref("events", ev.id), cleanEvent(v))), extra: repeating ? [onlyThisDay, all] : [all] });
+  bindAllDay();
 }
 $("eventList").onclick = e => { const g = e.target.closest('[data-go="plus:cycle"]'); if (g) { if (plusApi) plusApi.openView("cycle"); showTab("plus"); return; }
   const n = e.target.closest("[data-new-ev]"); if (n) { newEvent(n.dataset.newEv); return; } handleEventClick(e); };
 $("togglePast").onclick = () => { showPast = !showPast; renderEvents(); };
 // Ajouter un événement : fiche réglée sur le jour sélectionné.
 function newEvent(date) {
-  ui.openEditor({ title: "Nouvel événement", data: { date: date || (calView === "mois" ? selDay : today()), who: "deux", recur: "none", remind: "none", time: "" },
+  ui.openEditor({ title: "Nouvel événement", data: { date: date || (calView === "mois" ? selDay : today()), who: "deux", recur: "none", remind: "none", allDay: false, time: "", endTime: "" },
     fields: EV_FIELDS(), onSave: v => {
       write(addDoc(col("events"), cleanEvent({ ...v, by: me, at: Date.now() })));
       toast(`${v.title} ajouté le ${FMT_DM.format(parse(v.date))}`);
       if (calView === "mois") selectDay(v.date);
     } });
+  bindAllDay();
 }
 $("addEventBtn").onclick = () => newEvent();
 
