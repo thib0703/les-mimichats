@@ -416,10 +416,12 @@ $("addEventBtn").onclick = () => newEvent();
 
 // ================= TÂCHES =================
 let tasks = [], taskFilter = "todo";
-const RECUR = { none: "", daily: "Tous les jours", weekly: "Chaque semaine", monthly: "Chaque mois" };
+const RECUR = { none: "", daily: "Tous les jours", weekly: "Chaque semaine", biweekly: "Toutes les 2 semaines", monthly: "Chaque mois" };
+const TASK_REMIND = [["none", "Pas de rappel"], ["jour", "Le jour même"], ["veille", "La veille"]];
+const remindLabel = x => x.remind && x.remind !== "none" ? `rappel ${x.remind === "veille" ? "la veille " : ""}à ${(x.remindTime || "20:00").replace(":", "h")}` : "";
 function nextDue(due, recur) {
   const t = today(); let d = due || t;
-  do { d = recur === "daily" ? addDays(d, 1) : recur === "weekly" ? addDays(d, 7) : addMonths(d, 1); } while (d <= t && recur !== "none");
+  do { d = recur === "daily" ? addDays(d, 1) : recur === "weekly" ? addDays(d, 7) : recur === "biweekly" ? addDays(d, 14) : addMonths(d, 1); } while (d <= t && recur !== "none");
   return d;
 }
 function dueLabel(task) {
@@ -460,7 +462,7 @@ function renderTasks() {
     ? `<section class="aisle"><h3 class="aisle-title${title === "En retard" ? " late-title" : ""}">${title}<span>${g.length}</span></h3><ul class="list">${g.map(rowTask).join("")}</ul></section>` : ""; }).join("");
 }
 function rowTask(x) {
-  const meta = [dueLabel(x), RECUR[x.recur || "none"]].filter(Boolean).join(" · ");
+  const meta = [dueLabel(x), RECUR[x.recur || "none"], remindLabel(x) ? `<span class="remind-tag">${BELL}${esc(remindLabel(x))}</span>` : ""].filter(Boolean).join(" · ");
   return `<li class="row${x.done ? " done" : ""}">
     <button class="check" type="button" data-toggle-task="${esc(x.id)}" aria-label="${x.done ? "Marquer à faire" : "Marquer faite"}">${CHECK}</button>
     <span class="txt" data-edit-task="${esc(x.id)}">${esc(x.title)}${meta ? `<small>${meta}</small>` : ""}</span>
@@ -469,11 +471,9 @@ function rowTask(x) {
 }
 function handleTaskClick(e) {
   const ed = e.target.closest("[data-edit-task]");
-  if (ed) { const x = tasks.find(y => y.id === ed.dataset.editTask); if (x) ui.openEditor({ title: "Modifier la tâche", data: { recur: "none", ...x },
-    fields: [{ key: "title", label: "Tâche", type: "text", required: true }, { key: "who", label: "Qui s'en occupe", type: "who" },
-      { key: "recur", label: "Répétition", type: "select", options: [["none", "Une fois"], ["daily", "Tous les jours"], ["weekly", "Toutes les semaines"], ["monthly", "Tous les mois"]] },
-      { key: "due", label: "Pour le", type: "date" }],
-    onSave: v => write(updateDoc(ref("taches", x.id), v)), extra: [{ label: "Supprimer", danger: true, fn: () => ui.removeWithUndo(ref("taches", x.id), x, x.title) }] }); return; }
+  if (ed) { const x = tasks.find(y => y.id === ed.dataset.editTask); if (x) ui.openEditor({ title: "Modifier la tâche", data: { recur: "none", remind: "none", remindTime: "20:00", ...x },
+    fields: TASK_FIELDS,
+    onSave: v => { fixTask(v); write(updateDoc(ref("taches", x.id), v)); }, extra: [{ label: "Supprimer", danger: true, fn: () => ui.removeWithUndo(ref("taches", x.id), x, x.title) }] }); return; }
   const b = e.target.closest("[data-toggle-task],[data-del-task]"); if (!b) return;
   if (b.dataset.delTask) { const x = tasks.find(y => y.id === b.dataset.delTask); if (x) ui.removeWithUndo(ref("taches", x.id), x, x.title); return; }
   const x = tasks.find(y => y.id === b.dataset.toggleTask); if (!x) return;
@@ -485,13 +485,18 @@ function handleTaskClick(e) {
   }
 }
 $("taskList").onclick = handleTaskClick;
+const BELL = '<svg class="bell" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>';
 const TASK_FIELDS = [{ key: "title", label: "Tâche", type: "text", required: true, placeholder: "Sortir les poubelles, litière…" }, { key: "who", label: "Qui s'en occupe", type: "who" },
-  { key: "recur", label: "Répétition", type: "select", options: [["none", "Une fois"], ["daily", "Tous les jours"], ["weekly", "Toutes les semaines"], ["monthly", "Tous les mois"]] },
-  { key: "due", label: "Pour le", type: "date" }];
+  { key: "recur", label: "Répétition", type: "select", options: [["none", "Une fois"], ["daily", "Tous les jours"], ["weekly", "Toutes les semaines"], ["biweekly", "Toutes les 2 semaines"], ["monthly", "Tous les mois"]] },
+  { key: "due", label: "Date (si ça se répète : le premier jour)", type: "date" },
+  { key: "remind", label: "Notification sur le téléphone", type: "select", options: TASK_REMIND },
+  { key: "remindTime", label: "À quelle heure", type: "time" }];
+// Une tâche répétée ou avec rappel a toujours une date ; l'heure par défaut est 20 h.
+function fixTask(v) { if ((v.recur !== "none" || v.remind !== "none") && !v.due) v.due = today(); if (!v.remindTime) v.remindTime = "20:00"; }
 $("addTaskBtn").onclick = () => ui.openEditor({ title: "Nouvelle tâche",
-  data: { who: taskFilter === "thib" || taskFilter === "eva" ? taskFilter : me || "deux", recur: "none", due: today() }, fields: TASK_FIELDS,
-  onSave: v => { if (v.recur !== "none" && !v.due) v.due = today();
-    write(addDoc(col("taches"), { ...v, done: false, by: me, at: Date.now() })); toast(`${v.title} ajoutée`); } });
+  data: { who: taskFilter === "thib" || taskFilter === "eva" ? taskFilter : me || "deux", recur: "none", due: today(), remind: "none", remindTime: "20:00" }, fields: TASK_FIELDS,
+  onSave: v => { fixTask(v);
+    write(addDoc(col("taches"), { ...v, done: false, by: me, at: Date.now() })); toast(`${v.title} ajoutée${v.remind !== "none" ? " · rappel à " + v.remindTime.replace(":", "h") : ""}`); } });
 
 // ================= REPAS =================
 // Un document par jour (id = date) avec le midi et le soir.
