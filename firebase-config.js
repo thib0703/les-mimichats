@@ -15,6 +15,5 @@ export const MEMBRES = {
   eva:  { nom: "Eva",  hash: "9a6e67c7fe64c17353e4a59594b0e4cd580c8359428f9516224366c7037730a4" }
 };
 
-// Clé pour les notifications (étape 9 du guide, facultative).
-// Firebase → Paramètres du projet → Cloud Messaging → Certificats Web push → « Générer une paire de clés ».
-export const VAPID_KEY = "A_REMPLIR";
+// Clé publique des notifications (Firebase → Paramètres du projet → Cloud Messaging → Certificats Web push).
+export const VAPID_KEY = "BFakDRVHscjbCVzMvzc2N-p96sATx-RXyKwPLaAnA8uVzqfLS5e4jKVsFJDto_JNuZhhhdU85V2hi0QSICbxJK0";
