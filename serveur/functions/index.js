@@ -82,6 +82,7 @@ const addMonths = (s, n) => { const d = parseD(s); const day = d.getDate(); d.se
 const diffDays = (a, b) => Math.round((parseD(b) - parseD(a)) / 864e5);
 const spanOf = e => e.endDate && e.endDate > e.date ? diffDays(e.date, e.endDate) : 0;
 function nth(e, n) {
+  if (e.recur === "daily") return addDays(e.date, n);
   if (e.recur === "weekly") return addDays(e.date, 7 * n);
   if (e.recur === "biweekly") return addDays(e.date, 14 * n);
   if (e.recur === "monthly") return addMonths(e.date, n);
@@ -92,7 +93,7 @@ function startsBetween(e, from, to) {
   if (!e.date) return [];
   if (!e.recur || e.recur === "none") return e.date >= from && e.date <= to ? [e.date] : [];
   const ex = new Set(e.exdates || []), out = [];
-  const step = { weekly: 7, biweekly: 14, monthly: 30, yearly: 365 }[e.recur] || 7;
+  const step = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, yearly: 365 }[e.recur] || 7;
   let n = Math.max(0, Math.floor(diffDays(e.date, from) / step) - 2);
   for (let g = 0; g < 600; g++, n++) { const s = nth(e, n); if (!s || s > to) break; if (s >= from && !ex.has(s)) out.push(s); }
   return out;
@@ -105,7 +106,6 @@ exports.rappelsEvenements = onSchedule({ schedule: "every 15 minutes", timeZone:
   const now = new Date(), nowL = parisLocal(now), fromL = parisLocal(new Date(now.getTime() - 16 * 60 * 1000));
   const day = nowL.slice(0, 10);
   const snap = await db.collection("foyer/main/events").where("remind", "in", ["veille", "matin", "1h"]).get();
-  if (snap.empty) return;
   const metaRef = db.doc("foyer/main/meta/rappels");
   const meta = await metaRef.get();
   const sent = (meta.exists && meta.get("sent")) || {};
@@ -126,6 +126,21 @@ exports.rappelsEvenements = onSchedule({ schedule: "every 15 minutes", timeZone:
         const days = spanOf(e);
         if (days) body += ` (jusqu'au ${new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" }).format(parseD(addDays(s, days)))})`;
         await sendToWho(e.who, { title: "Rappel : " + e.title, body, tag: "rappel-" + key });
+        updates[key] = Date.now();
+      }
+    }
+  }
+  // Tâches avec rappel : le jour même ou la veille, à l'heure choisie, pour la personne qui s'en occupe.
+  const tsnap = await db.collection("foyer/main/taches").where("remind", "in", ["jour", "veille"]).get();
+  for (const doc of tsnap.docs) {
+    const x = doc.data();
+    if (!x.due || (x.done && (!x.recur || x.recur === "none"))) continue;
+    const hm = /^\d{2}:\d{2}$/.test(x.remindTime || "") ? x.remindTime : "20:00";
+    for (const s of startsBetween({ date: x.due, recur: x.recur }, day, addDays(day, 2))) {
+      const at = (x.remind === "veille" ? addDays(s, -1) : s) + "T" + hm;
+      const key = "t_" + doc.id + "_" + s;
+      if (at > fromL && at <= nowL && !sent[key] && !updates[key]) {
+        await sendToWho(x.who, { title: "À faire : " + x.title, body: x.remind === "veille" ? "C'est pour demain" : "C'est pour aujourd'hui", tag: "tache-" + key });
         updates[key] = Date.now();
       }
     }
