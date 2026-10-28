@@ -17,9 +17,11 @@ const fmtDay = s => new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "nu
 const euros = c => new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format((c || 0) / 100);
 
 // Envoie à tous les appareils inscrits, sauf ceux de `exclude` (l'auteur).
-async function sendTo(exclude, message) {
-  const snap = await db.collection("foyer/main/appareils").get();
-  const devices = snap.docs.filter(d => d.get("who") !== exclude && d.get("token"));
+// `cat` : type de notification ; chacun peut couper un type dans ses Réglages (foyer/main/meta/prefs).
+async function sendTo(exclude, message, cat) {
+  const [snap, prefsDoc] = await Promise.all([db.collection("foyer/main/appareils").get(), cat ? db.doc("foyer/main/meta/prefs").get() : null]);
+  const prefs = (prefsDoc && prefsDoc.exists && prefsDoc.get("notif")) || {};
+  const devices = snap.docs.filter(d => d.get("who") !== exclude && d.get("token") && !(cat && prefs[d.get("who")] && prefs[d.get("who")][cat] === false));
   if (!devices.length) return;
   const res = await getMessaging().sendEachForMulticast({
     tokens: devices.map(d => d.get("token")),
@@ -55,21 +57,67 @@ exports.nouveaute = onDocumentCreated({ document: "foyer/main/{liste}/{id}", reg
 
   if (liste === "courses") {
     if (await throttled("courses_" + by, 3 * 60 * 1000)) return;
-    return sendTo(by, { title: "Courses", body: `${nom} a ajouté ${d.name} à la liste`, tag: "courses" });
+    return sendTo(by, { title: "Courses", body: `${nom} a ajouté ${d.name} à la liste`, tag: "courses" }, "courses");
   }
   if (liste === "events") {
-    return sendTo(by, { title: "Nouvel événement", body: `${d.title} · ${fmtDay(d.date)}${d.time ? " à " + d.time : ""}`, tag: "agenda" });
+    return sendTo(by, { title: "Nouvel événement", body: `${nom} a ajouté ${d.title} · ${fmtDay(d.date)}${d.time ? " à " + d.time : ""}`, tag: "agenda" }, "agenda");
   }
   if (liste === "taches") {
     const pour = d.who === "deux" ? "pour vous deux" : "pour " + (NOMS[d.who] || "?");
-    return sendTo(by, { title: "Nouvelle tâche", body: `${d.title} (${pour})`, tag: "taches" });
+    return sendTo(by, { title: "Nouvelle tâche", body: `${d.title} (${pour})`, tag: "taches" }, "taches");
   }
   if (liste === "mots") {
-    return sendTo(by, { title: `${nom} t'a laissé un mot`, body: d.text, tag: "mots" });
+    return sendTo(by, { title: `${nom} t'a laissé un mot`, body: d.text, tag: "mots" }, "mots");
   }
   if (liste === "depenses") {
-    return sendTo(by, { title: "Nouvelle dépense", body: `${nom} : ${d.title} (${euros(d.amount)})`, tag: "depenses" });
+    return sendTo(by, { title: "Nouvelle dépense", body: `${nom} : ${d.title} (${euros(d.amount)})`, tag: "depenses" }, "argent");
   }
+  if (liste === "envies") return sendTo(by, { title: "Nouvelle envie", body: `${nom} a ajouté ${d.title || d.name}`, tag: "envies" }, "loisirs");
+  if (liste === "films") return sendTo(by, { title: "À regarder", body: `${nom} propose ${d.title}`, tag: "films" }, "loisirs");
+  if (liste === "sorties") return sendTo(by, { title: "Idée de sortie", body: `${nom} propose ${d.title}`, tag: "sorties" }, "loisirs");
+  if (liste === "souvenirs") return sendTo(by, { title: "Nouveau souvenir", body: `${nom} a ajouté « ${d.title} »`, tag: "souvenirs" }, "loisirs");
+  if (liste === "repas") return repasChange(event.params.id, {}, d);
+});
+
+// Repas prévu : « Eva a prévu des lasagnes jeudi soir ».
+async function repasChange(date, b, a) {
+  for (const slot of ["midi", "soir"]) {
+    const x = a[slot] || {}, y = b[slot] || {};
+    if (x.plat && x.plat !== y.plat && x.by) {
+      return sendTo(x.by, { title: "Repas prévu", body: `${NOMS[x.by] || "Quelqu'un"} a prévu ${x.plat} · ${fmtDay(date)} ${slot}`, tag: "repas-" + date + slot }, "repas");
+    }
+  }
+}
+
+// Modifications : tâche faite, article mis dans le panier, facture payée, produit fini…
+exports.activite = onDocumentUpdated({ document: "foyer/main/{liste}/{id}", region: REGION }, async event => {
+  const liste = event.params.liste, id = event.params.id;
+  const b = event.data.before.data() || {}, a = event.data.after.data() || {};
+  if (liste === "taches") {
+    const fait = (a.done && !b.done) || (a.recur && a.recur !== "none" && a.due !== b.due && a.lastDoneAt && a.lastDoneAt !== b.lastDoneAt);
+    if (!fait || !a.lastDoneBy) return;
+    const nom = NOMS[a.lastDoneBy] || "Quelqu'un";
+    const msg = (a.doneMsg || "").trim();
+    return sendTo(a.lastDoneBy, { title: "C'est fait", body: msg ? `${nom} ${msg}` : `${nom} a fait : ${a.title}`, tag: "fait-" + id }, "taches");
+  }
+  // Courses cochées : gérées par coursesCochees (« Thib est aux courses », « Courses terminées »).
+  if (liste === "factures") {
+    if (!(a.paidAt && a.paidAt !== b.paidAt && a.paidBy)) return;
+    return sendTo(a.paidBy, { title: "Facture payée", body: `${NOMS[a.paidBy]} a payé ${a.name} (${euros(a.amount)})`, tag: "facture-" + id }, "argent");
+  }
+  if (liste === "frigo") {
+    if (!((b.qty || 0) > 0 && !((a.qty || 0) > 0) && a.by)) return;
+    return sendTo(a.by, { title: "Frigo", body: `${NOMS[a.by]} a fini : ${a.name}`, tag: "frigo-" + id }, "maison");
+  }
+  if (liste === "stock") {
+    if (!(a.by && a.level !== b.level && (a.level === "vide" || a.level === "bientot"))) return;
+    return sendTo(a.by, { title: "Rangements", body: `${a.name} : ${a.level === "vide" ? "il n'y en a plus" : "bientôt fini"} (${NOMS[a.by]})`, tag: "stock-" + id }, "maison");
+  }
+  if (liste === "films") {
+    if (!(a.seen && !b.seen && a.seenBy)) return;
+    return sendTo(a.seenBy, { title: "Films & séries", body: `${NOMS[a.seenBy]} a marqué ${a.title} comme vu`, tag: "film-" + id }, "loisirs");
+  }
+  if (liste === "repas") return repasChange(id, b, a);
 });
 
 // ---------- Quelqu'un coche les courses ----------
@@ -90,12 +138,12 @@ exports.coursesCochees = onDocumentUpdated({ document: "foyer/main/courses/{id}"
   });
   const reste = await db.collection("foyer/main/courses").where("done", "==", false).get();
   if (reste.empty) {
-    return sendTo(by, { title: "Courses terminées ✓", body: `${nom} a tout pris, la liste est vide.`, tag: "panier" });
+    return sendTo(by, { title: "Courses terminées ✓", body: `${nom} a tout pris, la liste est vide.`, tag: "panier" }, "courses");
   }
   if (debut) {
     const n = reste.size;
     return sendTo(by, { title: `${nom} est aux courses 🛒`,
-      body: `${after.name} est dans le panier, encore ${n} article${n > 1 ? "s" : ""}. Ajoute vite ce qui manque !`, tag: "panier" });
+      body: `${after.name} est dans le panier, encore ${n} article${n > 1 ? "s" : ""}. Ajoute vite ce qui manque !`, tag: "panier" }, "courses");
   }
 });
 

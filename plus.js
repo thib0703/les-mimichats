@@ -183,7 +183,7 @@ export function initPlus(ctx) {
     }
   };
   function setLevel(s, lvl) {
-    write(updateDoc(refOf("stock", s.id), { level: lvl, at: Date.now() }));
+    write(updateDoc(refOf("stock", s.id), { level: lvl, at: Date.now(), by: me() }));
     if (lvl === "vide" && addCourse(s.name, catOf(s))) toast(`${s.name} ajouté aux courses`);
   }
   function seedMeubles() {
@@ -302,7 +302,7 @@ export function initPlus(ctx) {
       write(addDoc(pathOf("films"), { title, type: $("filmType").value, where: $("filmWhere").value.trim(), who: $("filmWho").value, seen: false, by: me(), at: Date.now() }));
       $("filmTitle").value = ""; $("filmWhere").value = "";
     },
-    toggle(f) { write(updateDoc(refOf("films", f.id), { seen: !f.seen, seenAt: f.seen ? 0 : Date.now() })); if (UI.pick === f.id) UI.pick = null; }
+    toggle(f) { write(updateDoc(refOf("films", f.id), { seen: !f.seen, seenAt: f.seen ? 0 : Date.now(), seenBy: me() })); if (UI.pick === f.id) UI.pick = null; }
   };
   function opts2(list, cur, act) { return list.map(([v, l]) => `<button type="button" data-act="${act}" data-v="${v}" aria-pressed="${v === cur}">${esc(l)}</button>`).join(""); }
 
@@ -712,12 +712,12 @@ export function initPlus(ctx) {
         const q = f.qty > 0 ? f.qty : 0;
         ui.openEditor({ title: f.name, data: {}, fields: [], extra: [
           { label: q > 1 ? `J'en ai utilisé 1 (il en restera ${q - 1})` : "J'ai utilisé le dernier", fn: () => {
-            write(updateDoc(refOf("frigo", f.id), { qty: q - 1, at: Date.now() }));
+            write(updateDoc(refOf("frigo", f.id), { qty: q - 1, at: Date.now(), by: me() }));
             if (q - 1 === 0) toast(`${f.name} est dans « Fini récemment »`); } },
           { label: `J'en ai rajouté 1 (il y en aura ${q + 1})`, fn: () => write(updateDoc(refOf("frigo", f.id), { qty: q + 1, at: Date.now() })) },
           { label: "Modifier", fn: () => openEdit("frigo", f) },
           { label: "C'est fini", danger: true, fn: () => {
-            write(updateDoc(refOf("frigo", f.id), { qty: 0, at: Date.now() }));
+            write(updateDoc(refOf("frigo", f.id), { qty: 0, at: Date.now(), by: me() }));
             toast(`${f.name} est dans « Fini récemment »`, { label: "Annuler", fn: () => write(updateDoc(refOf("frigo", f.id), { qty: q, at: Date.now() })) }); } }
         ] }); break; }
       case "create": openCreate(UI.view); break;

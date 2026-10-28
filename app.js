@@ -112,6 +112,24 @@ $("logout").onclick = () => { openSheet(false); signOut(auth); };
 
 function setSync(state, label) { const s = $("sync"); s.className = "sync " + state; s.title = label; }
 
+// ================= QUOI ME NOTIFIER =================
+// Chacun choisit ce que les actions de l'autre lui envoient (enregistré dans foyer/main/meta/prefs).
+const NOTIF_CATS = [["courses", "Courses", "ajoute un article ou fait les courses"], ["taches", "Tâches", "ajoute ou termine une tâche"],
+  ["agenda", "Agenda", "ajoute un événement"], ["repas", "Repas", "prévoit un repas"], ["argent", "Argent", "ajoute une dépense ou paie une facture"],
+  ["maison", "Maison", "finit un produit du frigo ou des rangements"], ["loisirs", "Loisirs", "ajoute une envie, un film, une sortie, un souvenir"],
+  ["mots", "Mots doux", "m'écrit un mot doux"]];
+let notifPrefs = {};
+function renderNotifPrefs() {
+  const el = $("notifPrefs"); if (!el) return;
+  const mine = (notifPrefs.notif || {})[me] || {}, autre = MEMBRES[me === "thib" ? "eva" : "thib"]?.nom || "l'autre";
+  el.innerHTML = `<p class="small muted">Me prévenir quand ${esc(autre)}…</p>` + NOTIF_CATS.map(([k, l, d]) =>
+    `<label class="np-row"><span><b>${esc(l)}</b><small>${esc(d)}</small></span><input type="checkbox" data-np="${k}"${mine[k] === false ? "" : " checked"}></label>`).join("");
+}
+document.addEventListener("change", e => {
+  const c = e.target.closest("[data-np]"); if (!c || !me) return;
+  write(setDoc(ref("meta", "prefs"), { notif: { [me]: { [c.dataset.np]: c.checked } } }, { merge: true }));
+});
+
 // ================= COURSES =================
 let courses = [], habitues = {}, confirmClear = false, showCart = false, achats = [], showHist = false;
 
@@ -539,7 +557,8 @@ const TASK_FIELDS = [{ key: "title", label: "Tâche", type: "text", required: tr
   { key: "recur", label: "Répétition", type: "select", options: [["none", "Une fois"], ["daily", "Tous les jours"], ["weekly", "Toutes les semaines"], ["biweekly", "Toutes les 2 semaines"], ["monthly", "Tous les mois"]] },
   { key: "due", label: "Date (si ça se répète : le premier jour)", type: "date" },
   { key: "remind", label: "Notification sur le téléphone", type: "select", options: TASK_REMIND },
-  { key: "remindTime", label: "À quelle heure", type: "time" }];
+  { key: "remindTime", label: "À quelle heure", type: "time" },
+  { key: "doneMsg", label: "Quand c'est fait, l'autre reçoit (facultatif)", type: "text", placeholder: "a lancé une machine à laver" }];
 // Une tâche répétée ou avec rappel a toujours une date ; l'heure par défaut est 20 h.
 function fixTask(v) { if ((v.recur !== "none" || v.remind !== "none") && !v.due) v.due = today(); if (!v.remindTime) v.remindTime = "20:00"; }
 $("addTaskBtn").onclick = () => ui.openEditor({ title: "Nouvelle tâche",
@@ -639,7 +658,7 @@ function showRepasView(v) {
 }
 $("repasViews").onclick = e => { const b = e.target.closest("[data-rv]"); if (b) { showRepasView(b.dataset.rv); window.scrollTo(0, 0); } };
 function setMeal(date, slot, data) {
-  write(setDoc(ref("repas", date), { [slot]: data }, { merge: true }));
+  write(setDoc(ref("repas", date), { [slot]: { ...data, by: me } }, { merge: true }));
   if (data.plat) write(setDoc(foyerDoc, { plats: { [data.plat.toLowerCase()]: { name: data.plat, ingr: data.ingr || "", n: increment(1) } } }, { merge: true }));
 }
 
@@ -896,6 +915,8 @@ function start(user) {
   }, onErr));
   unsub.push(onSnapshot(col("events"), s => { events = toList(s); renderEvents(); renderToday(); }, onErr));
   unsub.push(onSnapshot(col("taches"), s => { tasks = toList(s); renderTasks(); renderToday(); }, onErr));
+  unsub.push(onSnapshot(ref("meta", "prefs"), s => { notifPrefs = s.exists() ? s.data() : {}; renderNotifPrefs(); }, onErr));
+  renderNotifPrefs();
   unsub.push(onSnapshot(col("achats"), s => {
     achats = toList(s); renderCourses();
     // On ne garde que 4 mois d'historique.
