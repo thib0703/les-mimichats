@@ -1,6 +1,6 @@
 // Service worker : permet d'ouvrir l'appli sans réseau.
 // Change VERSION à chaque mise à jour pour rafraîchir le cache.
-const VERSION = "mimichats-v29";
+const VERSION = "mimichats-v30";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "plus.js", "notif.js", "widget.js", "recettes.js", "recettes-idees.js", "ui.js", "occurrences.js", "cycle.js", "firebase-config.js", "manifest.json",
   "icons/icon-192.png", "icons/icon-512.png", "icons/icon-180.png"];
 

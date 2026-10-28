@@ -454,7 +454,10 @@ export function initPlus(ctx) {
     for (let i = 0; i < files.length; i++) {
       toast(`Envoi des photos : ${i + 1} sur ${files.length}…`, null, 60000);
       try { list.push(await ctx.uploadPhoto(files[i], `foyer/souvenirs/${id}/${Date.now()}-${i}.jpg`)); write(updateDoc(refOf("souvenirs", id), { photos: list })); }
-      catch (err) { console.error(err); toast("La photo n'a pas pu être envoyée. Les photos demandent la formule Blaze de Firebase (étape 9 du guide)."); return; }
+      catch (err) { console.error(err); const c = (err && err.code) || "";
+        toast(c === "storage/unauthorized" ? "Photo refusée : il faut publier les règles de Storage dans Firebase."
+          : /bucket|project-not-found|unknown/.test(c) || !c ? "Photo non envoyée : l'espace Storage n'est pas encore créé dans Firebase."
+          : c === "storage/retry-limit-exceeded" ? "Photo non envoyée : connexion trop lente, réessaie." : `Photo non envoyée (${c}).`, null, 8000); return; }
     }
     toast(files.length > 1 ? `${files.length} photos ajoutées` : "Photo ajoutée");
   }
