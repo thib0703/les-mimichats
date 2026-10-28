@@ -163,30 +163,20 @@ function mots() {
   const g = new LinearGradient(); g.colors = [PERSO_CLAIR[qui], PERSO_FONCE[qui]]; g.locations = [0, 1];
   g.startPoint = new Point(0, 0); g.endPoint = new Point(1, 1);
   w.backgroundGradient = g;
-  const blanc = Color.white(), blanc70 = new Color("#FFFFFF", 0.72);
-  const h = w.addStack(); h.centerAlignContent();
-  symbole(h, "heart.fill", 13, blanc); h.addSpacer(6); txt(h, d.other, F.titre(14), blanc);
-  h.addSpacer();
+  const blanc = Color.white(), blanc70 = new Color("#FFFFFF", 0.75);
   const m = d.mot || d.mots[0];
-  if (m && m.pinned) symbole(h, "pin.fill", 12, blanc70);
+  // Prénom centré en haut, heure centrée en bas, de même hauteur : le message est pile au milieu.
+  const centre = () => { const r = w.addStack(); r.centerAlignContent(); r.addSpacer(); return r; };
+  const h = centre(); symbole(h, "heart.fill", 12, blanc); h.addSpacer(5); txt(h, d.other, F.titre(13), blanc); h.addSpacer();
   w.addSpacer();
-  if (!m) { txt(w, `Pas encore de mot de ${d.other}`, F.demi(15), blanc70, 3); w.addSpacer(); return; }
-  const t = txt(w, m.text, F.titre(grand ? 26 : petit ? 18 : 21), blanc, grand ? 6 : petit ? 4 : 3);
-  t.minimumScaleFactor = 0.6;
-  w.addSpacer(6);
-  txt(w, ilya(m.at), F.demi(12), blanc70);
-  if (grand && d.mots.length > 1) {
-    w.addSpacer(18);
-    d.mots.filter(x => x.at !== m.at).slice(0, 2).forEach(x => {
-      const r = w.addStack(); r.centerAlignContent();
-      const barre = r.addStack(); barre.size = new Size(3, 32); barre.cornerRadius = 1.5; barre.backgroundColor = blanc70;
-      r.addSpacer(10);
-      const c = r.addStack(); c.layoutVertically();
-      txt(c, x.text, F.demi(14), blanc); txt(c, ilya(x.at), F.texte(11), blanc70);
-      r.addSpacer();
-      w.addSpacer(8);
-    });
-  }
+  const c = centre();
+  const t = txt(c, m ? m.text : `Pas encore de mot de ${d.other}`, m ? F.titre(grand ? 30 : petit ? 18 : 20) : F.demi(15), m ? blanc : blanc70, grand ? 7 : petit ? 5 : 3);
+  t.centerAlignText(); t.minimumScaleFactor = 0.5;
+  c.addSpacer();
+  w.addSpacer();
+  const b = centre();
+  if (m && m.pinned) { symbole(b, "pin.fill", 11, blanc70); b.addSpacer(4); }
+  txt(b, m ? ilya(m.at) : " ", F.demi(13), blanc70); b.addSpacer();
 }
 
 function agenda() {
