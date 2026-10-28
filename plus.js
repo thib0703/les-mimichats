@@ -14,6 +14,16 @@ export function initPlus(ctx) {
   const cents = v => { const n = parseFloat(String(v || "").replace(",", ".").replace(/\s/g, "")); return isFinite(n) && n > 0 ? Math.round(n * 100) : 0; };
   const FMT_DM = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
   const FMT_DMY = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  const FMT_DML = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
+  // « 20 septembre 2026 » ou, pour une période, « 20 – 22 septembre 2026 · 3 jours »
+  const souvWhen = s => {
+    if (!s.date) return "";
+    if (!s.end || s.end <= s.date) return FMT_DMY.format(parse(s.date));
+    const a = parse(s.date), b = parse(s.end), n = Math.round((b - a) / 864e5) + 1;
+    const span = a.getFullYear() !== b.getFullYear() ? `${FMT_DMY.format(a)} – ${FMT_DMY.format(b)}`
+      : a.getMonth() !== b.getMonth() ? `${FMT_DML.format(a)} – ${FMT_DMY.format(b)}` : `${a.getDate()} – ${FMT_DMY.format(b)}`;
+    return `${span} · ${n} jours`;
+  };
   const daysUntil = s => Math.round((parse(s) - parse(today())) / 864e5);
   const rel = n => n === 0 ? "aujourd'hui" : n === 1 ? "demain" : n === -1 ? "hier" : n < 0 ? `il y a ${-n} jours` : `dans ${n} jours`;
   const plural = (n, w) => `${n} ${w}${n > 1 ? "s" : ""}`;
@@ -386,29 +396,39 @@ export function initPlus(ctx) {
       const t = today();
       const yearly = S.souvenirs.filter(s => s.yearly && s.date).map(s => ({ s, ...nextYearly(s.date) })).sort((a, b) => a.date.localeCompare(b.date));
       const journal = S.souvenirs.filter(s => !s.yearly).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-      const onThisDay = journal.filter(s => s.date && s.date.slice(5) === t.slice(5) && s.date < t);
+      const md = t.slice(5), inPeriod = s => { const a = s.date.slice(5), b = (s.end && s.end > s.date ? s.end : s.date).slice(5); return a <= b ? md >= a && md <= b : md >= a || md <= b; };
+      const onThisDay = journal.filter(s => s.date && s.date < t && inPeriod(s) && (s.end || s.date).slice(0, 4) < t.slice(0, 4));
       const rowY = ({ s, date, years }) => { const n = daysUntil(date);
         return `<li class="row countdown${n === 0 ? " is-today" : ""}"><span class="cd-ring"></span><span class="cd-num">${n === 0 ? "Jour J" : n}</span><span class="cd-lbl">${n === 0 ? "c'est aujourd'hui" : n === 1 ? "jour" : "jours"}</span>
           <span class="txt">${esc(s.title)}<small>${esc(meta([FMT_DM.format(parse(date)), years > 0 ? plural(years, "an") : ""]))}</small></span>${del("souvenirs", s.id, s.title)}</li>`; };
       const photos = s => (s.photos || []).length ? `<span class="photos">${s.photos.map(ph => `<a href="${esc(ph.url)}" target="_blank" rel="noopener"><img src="${esc(ph.url)}" alt="" loading="lazy"></a>`).join("")}</span>` : "";
-      const addPhoto = s => `<label class="mini photo-add" for="ph-${esc(s.id)}">+ Photo<input type="file" id="ph-${esc(s.id)}" data-souv="${esc(s.id)}" accept="image/*" multiple hidden></label>`;
-      const rowJ = (s, i) => { const ph = (s.photos || [])[0];
+      const addPhoto = s => `<label class="mini photo-add" for="ph-${esc(s.id)}">+ Photo ou vidéo<input type="file" id="ph-${esc(s.id)}" data-souv="${esc(s.id)}" accept="image/*,video/*" multiple hidden></label>`;
+      const slide = (s, m, j) => `<button type="button" class="dp-slide" data-act="diapo" data-id="${esc(s.id)}" data-i="${j}" aria-label="Voir en grand">${m.type === "video"
+        ? `<video src="${esc(m.url)}#t=0.1" muted playsinline loop preload="metadata"></video><span class="dp-vid" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg></span>`
+        : `<img src="${esc(m.url)}" alt="" loading="lazy">`}</button>`;
+      const rowJ = (s, i) => { const media = s.photos || [], ph = media[0];
         return `<li class="row polaroid" style="--rot:${[-2.2, 1.6, -1, 2.4][i % 4]}deg">
-          <span class="pol-photo">${ph ? `<a href="${esc(ph.url)}" target="_blank" rel="noopener"><img src="${esc(ph.url)}" alt="" loading="lazy"></a>${s.photos.length > 1 ? `<span class="pol-more">+${s.photos.length - 1}</span>` : ""}`
-            : `<label class="pol-empty" for="ph-${esc(s.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Ajouter une photo</span></label>`}</span>
-          <span class="txt"><strong class="pol-title">${esc(s.title)}</strong><small>${esc(s.date ? FMT_DMY.format(parse(s.date)) : "")}</small>${s.note ? `<span class="note">${esc(s.note)}</span>` : ""}</span>
-          ${ph ? addPhoto(s) : `<input type="file" id="ph-${esc(s.id)}" data-souv="${esc(s.id)}" accept="image/*" multiple hidden>`}${del("souvenirs", s.id, s.title)}</li>`; };
+          <span class="pol-photo${media.length > 1 ? " diapo" : ""}">${ph ? `<span class="dp-track">${media.map((m, j) => slide(s, m, j)).join("")}</span>${media.length > 1
+              ? `<span class="dp-dots" aria-hidden="true">${media.map((m, j) => `<i${j ? "" : ' class="on"'}></i>`).join("")}</span><span class="dp-count">1/${media.length}</span>` : ""}`
+            : `<label class="pol-empty" for="ph-${esc(s.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Ajouter une photo ou une vidéo</span></label>`}</span>
+          <span class="txt"><strong class="pol-title">${esc(s.title)}</strong><small>${esc(souvWhen(s))}</small>${s.note ? `<span class="note">${esc(s.note)}</span>` : ""}</span>
+          ${ph ? addPhoto(s) : `<input type="file" id="ph-${esc(s.id)}" data-souv="${esc(s.id)}" accept="image/*,video/*" multiple hidden>`}${del("souvenirs", s.id, s.title)}</li>`; };
       return `${onThisDay.length ? `<div class="card hero-num"><p class="eyebrow">Ce jour-là</p>${onThisDay.map(s => `<p class="big">${esc(s.title)}</p><p class="muted small">${esc(plural(+t.slice(0, 4) - +s.date.slice(0, 4), "an"))} aujourd'hui</p>`).join("")}</div>` : ""}
         <form class="add card notebook" data-form="souvenirs" autocomplete="off">
           <p class="notebook-title">Un nouveau souvenir</p>
           <input type="text" id="souvTitle" placeholder="Notre rencontre, premier voyage, soirée raclette…" aria-label="Titre">
           <textarea id="souvNote" rows="2" placeholder="Un petit mot pour s'en souvenir (facultatif)" aria-label="Note"></textarea>
           <div class="add-row wrap-row">
-            <input type="date" id="souvDate" value="${t}" aria-label="Date">
-            <label class="checkline" for="souvYearly"><input type="checkbox" id="souvYearly"> Revient chaque année</label>
+            <input type="date" id="souvDate" value="${t}" aria-label="Date (ou début)">
+            <label class="checkline" for="souvMulti"><input type="checkbox" id="souvMulti"> Sur plusieurs jours</label>
           </div>
+          <div class="add-row wrap-row souv-end" id="souvEndRow" hidden>
+            <span class="hint">jusqu'au</span><input type="date" id="souvEnd" aria-label="Date de fin">
+            <span class="hint">week-end, vacances, voyage…</span>
+          </div>
+          <label class="checkline" for="souvYearly"><input type="checkbox" id="souvYearly"> Revient chaque année</label>
           <div class="add-row wrap-row">
-            <label class="btn ghost file-btn" for="souvPhotos">Ajouter des photos<input type="file" id="souvPhotos" accept="image/*" multiple hidden></label>
+            <label class="btn ghost file-btn" for="souvPhotos">Photos ou vidéos<input type="file" id="souvPhotos" accept="image/*,video/*" multiple hidden></label>
             <span class="hint" id="souvPhotosInfo"></span>
             <button class="btn" type="submit">Ajouter</button>
           </div></form>
@@ -420,24 +440,32 @@ export function initPlus(ctx) {
       const title = $("souvTitle").value.trim(), date = $("souvDate").value; if (!title || !date) return;
       const files = [...($("souvPhotos").files || [])];
       const id = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      write(setDoc(refOf("souvenirs", id), { title, note: $("souvNote").value.trim(), date, yearly: $("souvYearly").checked, photos: [], by: me(), at: Date.now() }));
+      const endV = $("souvMulti").checked ? $("souvEnd").value : "", end = endV && endV > date ? endV : "";
+      write(setDoc(refOf("souvenirs", id), { title, note: $("souvNote").value.trim(), date, end, yearly: $("souvYearly").checked, photos: [], by: me(), at: Date.now() }));
       $("souvTitle").value = ""; $("souvNote").value = ""; $("souvYearly").checked = false; $("souvPhotos").value = ""; $("souvPhotosInfo").textContent = "";
+      $("souvMulti").checked = false; $("souvEnd").value = ""; $("souvEndRow").hidden = true;
       if (files.length) addPhotos(id, files, []);
     }
   };
 
-  // Envoi des photos d'un souvenir, une par une.
+  // Envoi des photos et vidéos d'un souvenir, une par une.
   async function addPhotos(id, files, existing) {
-    const list = existing.slice();
+    const list = existing.slice(); let ok = 0;
     for (let i = 0; i < files.length; i++) {
-      toast(`Envoi des photos : ${i + 1} sur ${files.length}…`, null, 60000);
-      try { list.push(await ctx.uploadPhoto(files[i], `foyer/souvenirs/${id}/${Date.now()}-${i}.jpg`)); write(updateDoc(refOf("souvenirs", id), { photos: list })); }
-      catch (err) { console.error(err); toast("La photo n'a pas pu être envoyée. Les photos demandent la formule Blaze de Firebase (étape 9 du guide)."); return; }
+      const f = files[i], vid = (f.type || "").startsWith("video/");
+      toast(`Envoi ${vid ? "de la vidéo" : "des photos"} : ${i + 1} sur ${files.length}…`, null, 120000);
+      try { list.push(await ctx.uploadMedia(f, `foyer/souvenirs/${id}/${Date.now()}-${i}`)); ok++; write(updateDoc(refOf("souvenirs", id), { photos: list })); }
+      catch (err) { console.error(err);
+        toast(err && err.tooBig ? "Cette vidéo est trop lourde (200 Mo maximum)." : vid ? "La vidéo n'a pas pu être envoyée." : "La photo n'a pas pu être envoyée. Les photos demandent la formule Blaze de Firebase (étape 9 du guide).");
+        if (!vid) return; }
     }
-    toast(files.length > 1 ? `${files.length} photos ajoutées` : "Photo ajoutée");
+    if (ok) toast(ok > 1 ? `${ok} photos et vidéos ajoutées` : files[0].type.startsWith("video/") ? "Vidéo ajoutée" : "Photo ajoutée");
   }
   root.addEventListener("change", e => {
-    if (e.target.id === "souvPhotos") { const n = e.target.files.length; $("souvPhotosInfo").textContent = n ? `${n} photo${n > 1 ? "s" : ""} choisie${n > 1 ? "s" : ""}` : ""; return; }
+    if (e.target.id === "souvPhotos") { const n = e.target.files.length; $("souvPhotosInfo").textContent = n ? `${n} fichier${n > 1 ? "s" : ""} choisi${n > 1 ? "s" : ""}` : ""; return; }
+    if (e.target.id === "souvMulti") { const on = e.target.checked; $("souvEndRow").hidden = !on;
+      if (on && !$("souvEnd").value) { const d = $("souvDate").value || today(); $("souvEnd").value = addDays(d, 2); } if (on) $("souvEnd").min = $("souvDate").value; return; }
+    if (e.target.id === "souvDate" && $("souvEnd")) { $("souvEnd").min = e.target.value; if ($("souvEnd").value && $("souvEnd").value <= e.target.value) $("souvEnd").value = addDays(e.target.value, 1); return; }
     const sid = e.target.dataset && e.target.dataset.souv; if (!sid) return;
     const sv = S.souvenirs.find(x => x.id === sid); const files = [...e.target.files]; e.target.value = "";
     if (sv && files.length) addPhotos(sid, files, sv.photos || []);
@@ -577,8 +605,9 @@ export function initPlus(ctx) {
       { key: "place", label: "Lieu", type: "text" }, { key: "who", label: "Idée de", type: "who" }, { key: "price", label: "Budget (€)", type: "cents" }, { key: "url", label: "Lien", type: "url" }], fix: v => { v.url = safeUrl(v.url || ""); } },
     cadeaux: { title: "Modifier l'idée cadeau", label: x => x.title, fields: [{ key: "title", label: "Idée", type: "text", required: true }, { key: "for", label: "Pour qui", type: "text" },
       { key: "occasion", label: "Occasion", type: "select", options: OCCAS.map(o => [o, o]) }, { key: "date", label: "Date de l'occasion", type: "date" }, { key: "price", label: "Prix (€)", type: "cents" }, { key: "url", label: "Lien", type: "url" }], fix: v => { v.url = safeUrl(v.url || ""); } },
-    souvenirs: { title: "Modifier le souvenir", label: x => x.title, fields: [{ key: "title", label: "Titre", type: "text", required: true }, { key: "date", label: "Date", type: "date", required: true },
-      { key: "note", label: "Petit mot", type: "textarea" }, { key: "yearly", label: "Revient chaque année", type: "checkbox" }] },
+    souvenirs: { title: "Modifier le souvenir", label: x => x.title, fields: [{ key: "title", label: "Titre", type: "text", required: true }, { key: "date", label: "Date (ou début)", type: "date", required: true },
+      { key: "end", label: "Jusqu'au (si plusieurs jours)", type: "date" },
+      { key: "note", label: "Petit mot", type: "textarea" }, { key: "yearly", label: "Revient chaque année", type: "checkbox" }], fix: v => { if (!v.end || v.end <= v.date) v.end = ""; } },
     valise: { title: "Modifier", label: x => x.name, fields: [{ key: "name", label: "Objet", type: "text", required: true }, { key: "cat", label: "Catégorie", type: "select", options: VALISE_CATS.map(c => [c, c]) },
       { key: "who", label: "Pour qui", type: "who" }] }
   };
@@ -686,6 +715,7 @@ export function initPlus(ctx) {
     const item = k && id ? S[k].find(x => x.id === id) : null;
     switch (a) {
       case "open": open(k); break;
+      case "diapo": { const sv = S.souvenirs.find(x => x.id === id); if (sv) openDiapo(sv, +b.dataset.i || 0); break; }
       case "back": open(null); break;
       case "goto": ctx.showTab(k); break;
       case "sitem": { const it = S.stock.find(x => x.id === id); if (!it) break; const cur = lvlIndex(it);
@@ -760,6 +790,46 @@ export function initPlus(ctx) {
     }
   });
   root.addEventListener("submit", e => { const k = e.target.dataset.form; if (!k || !R[k]) return; e.preventDefault(); R[k].submit(); render(); });
+
+  // ================= Mini diapo des souvenirs =================
+  const dpTouched = new WeakMap();
+  function dpSync(track) {
+    const n = track.children.length, i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+    const box = track.parentElement;
+    box.querySelectorAll(".dp-dots i").forEach((d, j) => d.classList.toggle("on", j === i));
+    const c = box.querySelector(".dp-count"); if (c) c.textContent = `${i + 1}/${n}`;
+    [...track.querySelectorAll("video")].forEach(v => { const on = v.closest(".dp-slide") === track.children[i]; if (on) v.play().catch(() => {}); else v.pause(); });
+  }
+  root.addEventListener("scroll", e => { if (e.target.classList && e.target.classList.contains("dp-track")) dpSync(e.target); }, true);
+  ["touchstart", "pointerdown"].forEach(ev => root.addEventListener(ev, e => { const tr = e.target.closest && e.target.closest(".dp-track"); if (tr) dpTouched.set(tr, Date.now()); }, { passive: true }));
+  setInterval(() => {
+    if (UI.view !== "souvenirs" || document.hidden || $("diapoBox")) return;
+    root.querySelectorAll(".diapo .dp-track").forEach(tr => {
+      const r = tr.getBoundingClientRect(); if (r.bottom < 0 || r.top > innerHeight) return;
+      if (Date.now() - (dpTouched.get(tr) || 0) < 7000) return;
+      const v = tr.querySelector(".dp-slide:nth-child(" + (Math.round(tr.scrollLeft / Math.max(1, tr.clientWidth)) + 1) + ") video");
+      if (v && !v.paused && v.duration && v.currentTime < Math.min(v.duration, 12) - .3) return; // on laisse la vidéo jouer un peu
+      const n = tr.children.length, i = Math.round(tr.scrollLeft / Math.max(1, tr.clientWidth));
+      tr.scrollTo({ left: ((i + 1) % n) * tr.clientWidth, behavior: "smooth" });
+    });
+  }, 3500);
+  // Plein écran : on glisse d'une photo / vidéo à l'autre.
+  function openDiapo(sv, start) {
+    const media = sv.photos || []; if (!media.length) return;
+    const box = document.createElement("div"); box.id = "diapoBox"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", sv.title);
+    box.innerHTML = `<div class="db-head"><span class="db-title">${esc(sv.title)}<small>${esc(souvWhen(sv))}</small></span><span class="db-count"></span>
+        <button type="button" class="db-close" aria-label="Fermer">×</button></div>
+      <div class="db-track">${media.map(m => `<div class="db-slide">${m.type === "video" ? `<video src="${esc(m.url)}" controls playsinline preload="metadata"></video>` : `<img src="${esc(m.url)}" alt="">`}</div>`).join("")}</div>`;
+    document.body.appendChild(box); document.body.classList.add("no-scroll");
+    const tr = box.querySelector(".db-track"), cnt = box.querySelector(".db-count");
+    const upd = () => { const i = Math.round(tr.scrollLeft / Math.max(1, tr.clientWidth)); cnt.textContent = media.length > 1 ? `${i + 1} / ${media.length}` : "";
+      tr.querySelectorAll("video").forEach((v, j) => { if (v.closest(".db-slide") !== tr.children[i]) v.pause(); }); };
+    tr.addEventListener("scroll", upd, { passive: true });
+    requestAnimationFrame(() => { tr.scrollLeft = start * tr.clientWidth; upd(); });
+    const close = () => { box.querySelectorAll("video").forEach(v => v.pause()); box.remove(); document.body.classList.remove("no-scroll"); document.removeEventListener("keydown", key); };
+    const key = e => { if (e.key === "Escape") close(); if (e.key === "ArrowRight") tr.scrollBy({ left: tr.clientWidth, behavior: "smooth" }); if (e.key === "ArrowLeft") tr.scrollBy({ left: -tr.clientWidth, behavior: "smooth" }); };
+    box.querySelector(".db-close").onclick = close; document.addEventListener("keydown", key);
+  }
 
   // ================= Synchronisation =================
   const unsubs = [];
