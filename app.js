@@ -926,7 +926,17 @@ function start(user) {
   unsub.push(recApi.stop);
   initNotif({ $, fb, db, doc, setDoc, getMe: () => me, toast });
   initWidget({ $, db, doc, getDoc, setDoc, getMe: () => me, toast, MEMBRES });
+  openFromHash();
 }
+
+// Lien depuis un widget : #courses, #taches, #agenda ou #mots ouvre directement la bonne page.
+function openFromHash() {
+  const h = location.hash.slice(1); if (!h) return;
+  if (h === "mots" && plusApi) { plusApi.openView("mots"); showTab("plus"); }
+  else if (TAB_ORDER.includes(h)) showTab(h);
+  history.replaceState(null, "", location.pathname + location.search);
+}
+window.addEventListener("hashchange", () => { if (me) openFromHash(); });
 
 // Qui est connecté : on compare l'empreinte de l'adresse avec celles de firebase-config.js.
 async function emailHash(email) {

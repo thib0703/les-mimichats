@@ -19,7 +19,7 @@ export function initWidget({ $, db, doc, getDoc, setDoc, getMe, toast, MEMBRES }
         key = [...crypto.getRandomValues(new Uint8Array(18))].map(b => b.toString(16).padStart(2, "0")).join("");
         await setDoc(ref, { [who]: key }, { merge: true });
       }
-      code = script(who, key, MEMBRES[who === "thib" ? "eva" : "thib"]?.nom || "l'autre");
+      code = script(who, key);
       box.innerHTML = `
         <ol class="small">
           <li>Installe <a href="${SCRIPTABLE}" target="_blank" rel="noopener">Scriptable</a> (gratuit, sur l'App Store).</li>
@@ -27,7 +27,9 @@ export function initWidget({ $, db, doc, getDoc, setDoc, getMe, toast, MEMBRES }
           <li>Ouvre Scriptable, touche <strong>+</strong> en haut à droite, colle le code. Touche le titre en haut pour l'appeler <strong>Mimichats</strong>, puis <strong>OK</strong>.</li>
           <li>Sur l'écran d'accueil, appuie longuement sur un espace vide → <strong>Modifier</strong> → <strong>Ajouter un widget</strong> → <strong>Scriptable</strong> → taille moyenne → <strong>Ajouter</strong>.</li>
           <li>Appuie sur le widget → <strong>Modifier le widget</strong> → Script : <strong>Mimichats</strong>.</li>
+          <li>Dans <strong>Parameter</strong>, écris ce qu'il doit afficher : <strong>courses</strong>, <strong>taches</strong>, <strong>mots</strong> ou <strong>agenda</strong>. Laisse vide pour un peu de tout.</li>
         </ol>
+        <p class="small muted">Tu veux plusieurs widgets ? Refais seulement les étapes 4 à 6, avec un autre mot dans Parameter. Le grand format affiche plus de lignes.</p>
         <button class="btn" type="button" id="widgetCopy">Copier le code</button>
         <textarea class="widget-code" readonly rows="4" aria-label="Code du widget"></textarea>`;
       box.querySelector("textarea").value = code;
@@ -42,46 +44,21 @@ export function initWidget({ $, db, doc, getDoc, setDoc, getMe, toast, MEMBRES }
   };
 }
 
-function script(who, key, otherName) {
+function script(who, key) {
   const api = `https://europe-west9-les-mimichats.cloudfunctions.net/widget?who=${who}&k=${key}`;
   const app = location.origin + location.pathname.replace(/[^/]*$/, "");
-  return `// Les mimichats — widget (créé depuis les réglages de l'appli)
+  return `// Les mimichats — widget. Rien à modifier ici : l'affichage se met à jour tout seul.
+// Dans chaque widget, champ « Parameter » : courses, taches, mots ou agenda (vide = un peu de tout).
 const API = "${api}";
 const APP = "${app}";
-const fond = Color.dynamic(new Color("#ffffff"), new Color("#141414"));
-const encre = Color.dynamic(new Color("#111111"), new Color("#f2f2f2"));
-const gris = Color.dynamic(new Color("#7a7a7a"), new Color("#9a9a9a"));
-
-let d = null;
-try { d = await new Request(API).loadJSON(); } catch (e) {}
-
-const w = new ListWidget();
-w.backgroundColor = fond; w.url = APP; w.setPadding(14, 16, 14, 16);
-const petit = config.widgetFamily === "small";
-const txt = (s, size, color, bold, lines) => {
-  const t = w.addText(s); t.font = bold ? Font.boldRoundedSystemFont(size) : Font.systemFont(size);
-  t.textColor = color; if (lines) t.lineLimit = lines; return t;
-};
-
-txt("Les mimichats", 12, gris, true);
-w.addSpacer(6);
-if (!d || d.error) {
-  txt(d && d.error ? d.error : "Pas de réseau pour le moment", 13, encre, false, 3);
-} else {
-  if (d.mot) {
-    txt((d.mot.pinned ? "📌 " : "♥ ") + "${otherName}", 11, gris, true);
-    txt(d.mot.text, petit ? 14 : 15, encre, true, petit ? 4 : 2);
-    w.addSpacer(petit ? 4 : 8);
-  }
-  if (!petit || !d.mot) {
-    const c = d.courses;
-    txt(c.n ? "🛒 " + c.n + (c.n > 1 ? " courses : " : " course : ") + c.names.join(", ") : "🛒 Liste de courses vide", 12, encre, false, 1);
-    if (d.events.length) { w.addSpacer(3); txt("📅 " + d.events[0].when + " · " + d.events[0].title, 12, encre, false, 1); }
-  }
-}
-w.addSpacer();
-w.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
-if (config.runsInWidget) Script.setWidget(w); else await w.presentMedium();
-Script.complete();
+const fm = FileManager.local(), f = fm.joinPath(fm.documentsDirectory(), "mimichats-widget.js");
+let code = "";
+try {
+  code = await new Request(APP + "widget-scriptable.js?v=" + Date.now()).loadString();
+  if (code.includes("ListWidget")) fm.writeString(f, code); else code = "";
+} catch (e) {}
+if (!code && fm.fileExists(f)) code = fm.readString(f);
+const AF = Object.getPrototypeOf(async function () {}).constructor;
+await new AF("API", "APP", code)(API, APP);
 `;
 }

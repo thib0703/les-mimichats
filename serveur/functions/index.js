@@ -110,10 +110,11 @@ exports.widget = onRequest({ region: REGION }, async (req, res) => {
   if (!keys.exists || keys.get(who) !== k) return res.status(403).json({ error: "Clé refusée : recrée le widget dans les réglages" });
   const other = who === "thib" ? "eva" : "thib";
 
-  const [cs, ms, es] = await Promise.all([
+  const [cs, ms, es, ts] = await Promise.all([
     db.collection("foyer/main/courses").where("done", "==", false).get(),
     db.collection("foyer/main/mots").where("from", "==", other).get(),
-    db.collection("foyer/main/events").get()
+    db.collection("foyer/main/events").get(),
+    db.collection("foyer/main/taches").where("done", "==", false).get()
   ]);
   const courses = cs.docs.map(d => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0)).map(c => c.name);
   const mots = ms.docs.map(d => d.data()).sort((a, b) => (b.at || 0) - (a.at || 0));
@@ -133,11 +134,19 @@ exports.widget = onRequest({ region: REGION }, async (req, res) => {
   const quand = s => s === day ? "Aujourd'hui" : s === addDays(day, 1) ? "Demain"
     : new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", timeZone: "Europe/Paris" }).format(new Date(s + "T12:00:00Z"));
 
+  // Tâches à faire de la personne (et celles « pour vous deux ») : en retard et aujourd'hui d'abord.
+  const taches = ts.docs.map(d => d.data()).filter(x => x.who === who || x.who === "deux" || !x.who)
+    .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (b.at || 0) - (a.at || 0))
+    .map(x => ({ title: x.title || "", late: !!(x.due && x.due < day), today: x.due === day,
+      when: !x.due ? "" : x.due < day ? "En retard" : quand(x.due) }));
+
   res.json({
     other: NOMS[other],
     mot: mot ? { text: mot.text || "", at: mot.at || 0, pinned: !!mot.pinned } : null,
-    courses: { n: courses.length, names: courses.slice(0, 8) },
-    events: evs.slice(0, 3).map(e => ({ title: e.title, when: quand(e.date) + (e.time ? " " + e.time.replace(":", "h") : "") }))
+    mots: mots.slice(0, 4).map(m => ({ text: m.text || "", at: m.at || 0, pinned: !!m.pinned })),
+    courses: { n: courses.length, names: courses.slice(0, 30) },
+    taches: { n: taches.length, urgent: taches.filter(x => x.late || x.today).length, list: taches.slice(0, 14) },
+    events: evs.slice(0, 10).map(e => ({ title: e.title, when: quand(e.date) + (e.time ? " " + e.time.replace(":", "h") : "") }))
   });
 });
 
