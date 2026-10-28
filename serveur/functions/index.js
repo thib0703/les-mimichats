@@ -109,6 +109,46 @@ exports.widget = onRequest({ region: REGION }, async (req, res) => {
   const keys = await db.doc("foyer/main/meta/widget").get();
   if (!keys.exists || keys.get(who) !== k) return res.status(403).json({ error: "Clé refusée : recrée le widget dans les réglages" });
   const other = who === "thib" ? "eva" : "thib";
+  const nowL0 = parisLocal(new Date()), day0 = nowL0.slice(0, 10);
+
+  // Cocher (ou décocher pour annuler) depuis le widget : ?action=check|uncheck&type=courses|taches&id=…
+  const action = String(req.query.action || "");
+  if (action === "check" || action === "uncheck") {
+    const type = String(req.query.type || ""), id = String(req.query.id || "");
+    if ((type !== "courses" && type !== "taches") || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return res.status(400).json({ error: "Élément inconnu" });
+    const ref = db.doc(`foyer/main/${type}/${id}`);
+    const snap = await ref.get();
+    if (!snap.exists) return res.status(404).json({ error: "Déjà retiré de la liste" });
+    const x = snap.data(), name = x.name || x.title || "";
+    if (type === "courses") {
+      if (action === "check") {
+        if (x.done) return res.json({ ok: true, name, already: true });
+        const aid = "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        await db.doc("foyer/main/achats/" + aid).set({ name, cat: x.cat || "Autre", qty: x.qty || "", by: who, at: Date.now(), day: day0 });
+        await ref.update({ done: true, doneBy: who, rangement: null, achatId: aid });
+      } else {
+        if (x.achatId) await db.doc("foyer/main/achats/" + x.achatId).delete();
+        await ref.update({ done: false, rangement: null, achatId: null });
+      }
+      return res.json({ ok: true, name });
+    }
+    // Tâche : une tâche qui revient passe à sa prochaine date, comme dans l'appli.
+    const recur = x.recur && x.recur !== "none";
+    if (action === "check") {
+      if (x.done) return res.json({ ok: true, name, already: true });
+      if (recur) {
+        const prevDue = x.due || "";
+        await ref.update({ due: nextDue(prevDue, x.recur, day0), lastDoneBy: who, lastDoneAt: Date.now() });
+        return res.json({ ok: true, name, prevDue });
+      }
+      await ref.update({ done: true, lastDoneBy: who, lastDoneAt: Date.now() });
+      return res.json({ ok: true, name });
+    }
+    const prev = String(req.query.prevDue || "");
+    if (recur && /^\d{4}-\d{2}-\d{2}$/.test(prev)) await ref.update({ due: prev });
+    else await ref.update({ done: false });
+    return res.json({ ok: true, name });
+  }
 
   const [cs, ms, es, ts] = await Promise.all([
     db.collection("foyer/main/courses").where("done", "==", false).get(),
@@ -116,7 +156,8 @@ exports.widget = onRequest({ region: REGION }, async (req, res) => {
     db.collection("foyer/main/events").get(),
     db.collection("foyer/main/taches").where("done", "==", false).get()
   ]);
-  const courses = cs.docs.map(d => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0)).map(c => c.name);
+  const items = cs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.at || 0) - (b.at || 0)).map(c => ({ id: c.id, name: c.name }));
+  const courses = items.map(c => c.name);
   const mots = ms.docs.map(d => d.data()).sort((a, b) => (b.at || 0) - (a.at || 0));
   const mot = mots.find(m => m.pinned) || mots[0] || null;
 
@@ -135,16 +176,16 @@ exports.widget = onRequest({ region: REGION }, async (req, res) => {
     : new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", timeZone: "Europe/Paris" }).format(new Date(s + "T12:00:00Z"));
 
   // Tâches à faire de la personne (et celles « pour vous deux ») : en retard et aujourd'hui d'abord.
-  const taches = ts.docs.map(d => d.data()).filter(x => x.who === who || x.who === "deux" || !x.who)
+  const taches = ts.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.who === who || x.who === "deux" || !x.who)
     .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (b.at || 0) - (a.at || 0))
-    .map(x => ({ title: x.title || "", late: !!(x.due && x.due < day), today: x.due === day,
+    .map(x => ({ id: x.id, title: x.title || "", late: !!(x.due && x.due < day), today: x.due === day,
       when: !x.due ? "" : x.due < day ? "En retard" : quand(x.due) }));
 
   res.json({
     other: NOMS[other],
     mot: mot ? { text: mot.text || "", at: mot.at || 0, pinned: !!mot.pinned } : null,
     mots: mots.slice(0, 4).map(m => ({ text: m.text || "", at: m.at || 0, pinned: !!m.pinned })),
-    courses: { n: courses.length, names: courses.slice(0, 30) },
+    courses: { n: courses.length, names: courses.slice(0, 30), items: items.slice(0, 30) },
     taches: { n: taches.length, urgent: taches.filter(x => x.late || x.today).length, list: taches.slice(0, 14) },
     events: evs.slice(0, 10).map(e => ({ title: e.title, when: quand(e.date) + (e.time ? " " + e.time.replace(":", "h") : "") }))
   });
@@ -240,6 +281,13 @@ exports.rappelsEvenements = onSchedule({ schedule: "every 15 minutes", timeZone:
   for (const [k, v] of Object.entries({ ...sent, ...updates })) if (v > limit) keep[k] = v;
   if (Object.keys(updates).length || Object.keys(keep).length !== Object.keys(sent).length) await metaRef.set({ sent: keep });
 });
+
+// Prochaine échéance d'une tâche qui revient (même calcul que dans l'appli).
+function nextDue(due, recur, today) {
+  let d = due || today;
+  do { d = recur === "daily" ? addDays(d, 1) : recur === "weekly" ? addDays(d, 7) : recur === "biweekly" ? addDays(d, 14) : addMonths(d, 1); } while (d <= today);
+  return d;
+}
 
 // Pour un événement de Thib ou d'Eva, seul son téléphone sonne ; « Les deux » : tout le monde.
 async function sendToWho(who, message) {

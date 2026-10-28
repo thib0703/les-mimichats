@@ -8,6 +8,31 @@ const encre = Color.dynamic(new Color("#111111"), new Color("#f2f2f2"));
 const gris = Color.dynamic(new Color("#7a7a7a"), new Color("#9a9a9a"));
 const rouge = Color.dynamic(new Color("#c0392b"), new Color("#ff6b5b"));
 
+// ---------- Cocher depuis le widget ----------
+// Toucher un article ou une tâche ouvre Scriptable avec ?check=courses:ID (ou taches:ID) : on coche, on confirme.
+const QP = args.queryParameters || {};
+if (QP.check) {
+  const [type, id] = String(QP.check).split(":");
+  const call = async (action, extra) => {
+    try { return await new Request(`${API}&action=${action}&type=${type}&id=${encodeURIComponent(id)}${extra || ""}`).loadJSON(); }
+    catch (e) { return { error: "Pas de réseau, réessaie dans un instant" }; }
+  };
+  const r = await call("check");
+  const a = new Alert();
+  if (r.error) { a.title = "Oups"; a.message = r.error; a.addAction("OK"); await a.presentAlert(); return Script.complete(); }
+  a.title = "✓ " + r.name;
+  a.message = r.already ? "C'était déjà coché." : type === "courses" ? "Dans le panier !" : r.prevDue ? "Faite ! Elle revient à sa prochaine date." : "Faite !";
+  a.addAction("OK");
+  if (!r.already) a.addCancelAction("Annuler");
+  const i = await a.presentAlert();
+  if (i === -1) {
+    const u = await call("uncheck", r.prevDue ? "&prevDue=" + r.prevDue : "");
+    const b = new Alert(); b.title = u.error ? "Oups" : "Annulé"; b.message = u.error || `${r.name} n'est plus coché.`; b.addAction("OK"); await b.presentAlert();
+  }
+  return Script.complete();
+}
+const lien = (type, id) => `scriptable:///run/${encodeURIComponent(Script.name())}?check=${type}:${encodeURIComponent(id)}`;
+
 // Ce que le widget affiche : le champ « Parameter » du widget (courses, taches, mots, agenda), sinon un peu de tout.
 let P = String(args.widgetParameter || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 if (!config.runsInWidget) {
@@ -70,7 +95,10 @@ if (!d) {
   const c = d.courses;
   entete("🛒 Courses", c.n || "");
   if (!c.n) vide("La liste est vide 🎉");
-  else colonnes(c.names, (col, n) => txt(col, "• " + n, petit ? 13 : 14), grand ? 13 : 5, petit ? 1 : 2);
+  else colonnes(c.items || c.names.map(name => ({ name })), (col, it) => {
+    const r = col.addStack(); if (it.id && !petit) r.url = lien("courses", it.id);
+    txt(r, "○ " + it.name, petit ? 13 : 14);
+  }, grand ? 13 : 5, petit ? 1 : 2);
 } else if (mode === "taches") {
   const t = d.taches;
   entete("✓ À faire", t.n || "");
@@ -78,7 +106,7 @@ if (!d) {
   else {
     const max = grand ? 13 : 5;
     t.list.slice(0, max).forEach(x => {
-      const r = w.addStack(); r.centerAlignContent();
+      const r = w.addStack(); r.centerAlignContent(); if (x.id && !petit) r.url = lien("taches", x.id);
       txt(r, "○ " + x.title, petit ? 13 : 14, encre);
       if (!petit && x.when) { r.addSpacer(); txt(r, x.when, 11, x.late ? rouge : gris, true); }
       w.addSpacer(3);
