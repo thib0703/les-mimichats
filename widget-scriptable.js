@@ -127,20 +127,24 @@ function courses() {
   const c = d.courses, items = c.items || c.names.map(name => ({ name }));
   entete("cart.fill", "Courses", c.n ? String(c.n) : "");
   if (!c.n) return vide("checkmark.circle", "Tout est dans le panier");
-  const max = grand ? 11 : 4, cols = petit ? 1 : 2;
-  const shown = items.slice(0, max * cols);
-  const parCol = cols === 1 ? max : grand && shown.length <= 6 ? shown.length : Math.ceil(shown.length / 2);
+  const max = grand ? 10 : 4, cols = petit ? 1 : 2, place = max * cols;
+  // Trop d'articles : la dernière case devient « + N autres ».
+  const trop = c.n > place, shown = trop ? items.slice(0, place - 1) : items;
+  const cases = trop ? [...shown, { plus: c.n - shown.length }] : shown;
+  // Une seule colonne tant que ça tient, sinon deux colonnes équilibrées.
+  const parCol = cols === 1 || cases.length <= max ? max : Math.ceil(cases.length / 2);
   const row = w.addStack(); row.topAlignContent();
   for (let k = 0; k < cols; k++) {
-    const part = shown.slice(k * parCol, (k + 1) * parCol); if (!part.length) break;
+    const part = cases.slice(k * parCol, (k + 1) * parCol); if (!part.length) break;
     const col = row.addStack(); col.layoutVertically(); col.spacing = petit ? 7 : 9;
-    part.forEach(it => ligneCoche(col, it.name, it.id && lien("courses", it.id)));
+    part.forEach(it => it.plus
+      ? txt(col.addStack(), `+ ${it.plus} autre${it.plus > 1 ? "s" : ""}`, F.demi(petit ? 13 : 14), gris)
+      : ligneCoche(col, it.name, it.id && lien("courses", it.id)));
     if (k < cols - 1) row.addSpacer(12);
   }
   row.addSpacer();
-  reste(c.n - shown.length);
   w.addSpacer();
-  astuce();
+  if (Math.min(parCol, cases.length) <= max - 2) astuce();
 }
 
 function taches() {
@@ -150,11 +154,12 @@ function taches() {
   if (!n) return vide("sparkles", "Rien à faire aujourd'hui");
   const max = grand ? 11 : 4;
   const col = w.addStack(); col.layoutVertically(); col.spacing = petit ? 7 : 9;
-  jour.slice(0, max).forEach(x => ligneCoche(col, x.title, x.id && lien("taches", x.id), x.late ? retard : encre,
+  const trop = n > max;
+  jour.slice(0, trop ? max - 1 : max).forEach(x => ligneCoche(col, x.title, x.id && lien("taches", x.id), x.late ? retard : encre,
     petit ? null : r => { if (x.late) { txt(r, "en retard", F.demi(11), retard); r.addSpacer(8); } if (x.who) point(r, PERSO[x.who] || PERSO.deux, 8); }));
-  reste(n - max);
+  if (trop) txt(col.addStack(), `+ ${n - max + 1} autre${n - max + 1 > 1 ? "s" : ""}`, F.demi(petit ? 13 : 14), gris);
   w.addSpacer();
-  astuce();
+  if (Math.min(n, max) <= max - 2) astuce();
 }
 
 function mots() {
