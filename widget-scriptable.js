@@ -100,18 +100,19 @@ if (!d) {
     txt(r, "○ " + it.name, petit ? 13 : 14);
   }, grand ? 13 : 5, petit ? 1 : 2);
 } else if (mode === "taches") {
-  const t = d.taches;
-  entete("✓ À faire", t.n || "");
-  if (!t.n) vide("Rien à faire, profitez-en !");
+  // Seulement ce qui est pour aujourd'hui (et ce qui est en retard, en rouge).
+  const jour = d.taches.list.filter(x => x.today || x.late), n = d.taches.urgent ?? jour.length;
+  entete("✓ Aujourd'hui", n || "");
+  if (!n) vide("Rien à faire aujourd'hui, profitez-en !");
   else {
     const max = grand ? 13 : 5;
-    t.list.slice(0, max).forEach(x => {
+    jour.slice(0, max).forEach(x => {
       const r = w.addStack(); r.centerAlignContent(); if (x.id && !petit) r.url = lien("taches", x.id);
       txt(r, "○ " + x.title, petit ? 13 : 14, encre);
-      if (!petit && x.when) { r.addSpacer(); txt(r, x.when, 11, x.late ? rouge : gris, true); }
+      if (!petit && x.late) { r.addSpacer(); txt(r, "En retard", 11, rouge, true); }
       w.addSpacer(3);
     });
-    if (t.n > max) txt(w, `+ ${t.n - max} autre${t.n - max > 1 ? "s" : ""}`, 11, gris, true);
+    if (n > max) txt(w, `+ ${n - max} autre${n - max > 1 ? "s" : ""}`, 11, gris, true);
   }
 } else if (mode === "mots") {
   entete("♥ " + d.other);
@@ -126,12 +127,15 @@ if (!d) {
     });
   }
 } else if (mode === "agenda") {
-  entete("📅 Agenda");
-  if (!d.events.length) vide("Rien de prévu ces deux prochaines semaines");
-  else d.events.slice(0, grand ? 10 : petit ? 3 : 4).forEach(e => {
-    if (petit) { txt(w, e.when, 11, gris, true); txt(w, e.title, 13); w.addSpacer(3); return; }
+  // Seulement les événements d'aujourd'hui.
+  const jour = d.events.filter(e => /^Aujourd'hui/.test(e.when));
+  entete("📅 Aujourd'hui", jour.length || "");
+  if (!jour.length) vide("Rien de prévu aujourd'hui");
+  else jour.slice(0, grand ? 10 : petit ? 3 : 4).forEach(e => {
+    const heure = e.when.replace(/^Aujourd'hui ?/, "") || "Journée";
+    if (petit) { txt(w, heure, 11, gris, true); txt(w, e.title, 13); w.addSpacer(3); return; }
     const r = w.addStack(); r.centerAlignContent();
-    const q = r.addStack(); q.size = new Size(grand ? 120 : 110, 0); txt(q, e.when, 12, gris, true);
+    const q = r.addStack(); q.size = new Size(64, 0); txt(q, heure, 12, gris, true);
     txt(r, e.title, 14); r.addSpacer();
     w.addSpacer(4);
   });
