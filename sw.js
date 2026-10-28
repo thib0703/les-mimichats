@@ -1,6 +1,6 @@
 // Service worker : permet d'ouvrir l'appli sans réseau.
 // Change VERSION à chaque mise à jour pour rafraîchir le cache.
-const VERSION = "mimichats-v22";
+const VERSION = "mimichats-v23";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "plus.js", "notif.js", "recettes.js", "recettes-idees.js", "ui.js", "occurrences.js", "cycle.js", "firebase-config.js", "manifest.json",
   "icons/icon-192.png", "icons/icon-512.png", "icons/icon-180.png"];
 
@@ -47,7 +47,7 @@ self.addEventListener("fetch", e => {
 
   // Fichiers de l'appli : réseau d'abord (pour avoir les mises à jour), cache si hors ligne.
   if (url.origin === location.origin) {
-    e.respondWith(fetch(e.request).then(res => {
+    e.respondWith(fetch(e.request, { cache: "no-cache" }).then(res => {
       const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); return res;
     }).catch(() => caches.match(e.request).then(hit => hit || caches.match("index.html"))));
   }

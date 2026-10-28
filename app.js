@@ -1012,4 +1012,4 @@ $("loginForm").onsubmit = async e => {
 // Le jour change à minuit : on rafraîchit les libellés « Aujourd'hui », « En retard »…
 setInterval(() => { renderEvents(); renderTasks(); renderRepas(); renderToday(); plusApi && plusApi.tick(); }, 60 * 1000);
 
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => r.update()).catch(() => {});
