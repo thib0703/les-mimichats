@@ -511,13 +511,44 @@ export function initPlus(ctx) {
     submit() {
       const text = $("motText").value.trim(); if (!text) return;
       const pinned = !!($("motPin") && $("motPin").checked), pinTime = pinned && $("motPinTime") ? $("motPinTime").value : "";
-      // Un seul mot épinglé à la fois : le nouveau remplace l'ancien.
-      if (pinned) S.mots.filter(m => m.pinned && m.from === me()).forEach(m => write(updateDoc(refOf("mots", m.id), { pinned: false })));
-      write(addDoc(pathOf("mots"), { text, from: me(), by: me(), seen: false, at: Date.now(), pinned, pinTime }));
+      sendMot(text, pinned, pinTime);
       $("motText").value = ""; if ($("motPin")) $("motPin").checked = false; if ($("motPinTime")) $("motPinTime").value = "";
       if (pinned) toast(`Mot épinglé${pinTime ? " · il reviendra chaque jour à " + pinTime.replace(":", "h") : ""}`);
     }
   };
+  function sendMot(text, pinned, pinTime) {
+    // Un seul mot épinglé à la fois : le nouveau remplace l'ancien.
+    if (pinned) S.mots.filter(m => m.pinned && m.from === me()).forEach(m => write(updateDoc(refOf("mots", m.id), { pinned: false })));
+    write(addDoc(pathOf("mots"), { text, from: me(), by: me(), seen: false, at: Date.now(), pinned, pinTime: pinTime || "" }));
+  }
+
+  // ----- Fiche rapide « Un mot doux » (bulle flottante et bouton d'Aujourd'hui) -----
+  const IDEES = ["Je pense à toi ♥", "Tu me manques", "Bonne journée mon cœur", "Hâte de te retrouver ce soir", "Je t'aime"];
+  const qm = { sheet: $("motSheet"), bg: $("motSheetBg"), text: $("motText") };
+  function openMotSheet() {
+    const nom = MEMBRES[other()].nom;
+    $("motSheetTitle").textContent = `Un mot doux pour ${nom}`;
+    $("qmPinLabel").textContent = `Épingler sur l'écran de ${nom}`;
+    $("qmText").placeholder = IDEES[Math.floor(Math.random() * IDEES.length)];
+    qm.sheet.hidden = false; qm.bg.hidden = false;
+    setTimeout(() => $("qmText").focus(), 60);
+  }
+  function closeMotSheet() { qm.sheet.hidden = true; qm.bg.hidden = true; }
+  function resetMotSheet() { $("qmText").value = ""; $("qmPin").checked = false; $("qmPinTime").value = ""; }
+  $("motFab").addEventListener("click", openMotSheet);
+  qm.bg.addEventListener("click", closeMotSheet);
+  $("qmCancel").addEventListener("click", closeMotSheet);
+  $("qmAll").addEventListener("click", () => { closeMotSheet(); ctx.showTab("plus"); open("mots"); });
+  $("motSheetForm").addEventListener("submit", e => {
+    e.preventDefault();
+    const text = $("qmText").value.trim();
+    if (!text) { $("qmText").focus(); return; }
+    const pinned = $("qmPin").checked, pinTime = pinned ? $("qmPinTime").value : "";
+    sendMot(text, pinned, pinTime); resetMotSheet(); closeMotSheet();
+    const nom = MEMBRES[other()].nom;
+    toast(pinned ? `Mot épinglé sur l'écran de ${nom} ♥` : `Mot envoyé à ${nom} ♥`, { label: "Voir", fn: () => { ctx.showTab("plus"); open("mots"); } });
+  });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !qm.sheet.hidden) closeMotSheet(); });
 
   // Cycle d'Eva : données et affichage gérés par cycle.js.
   R.cycle = { label: "Cycle", local: true,
@@ -607,7 +638,7 @@ export function initPlus(ctx) {
     });
     renderBadge(); renderBanner();
   }
-  function open(k) { UI.view = k; try { sessionStorage.setItem("mimi-plus", k || ""); } catch (e) {} render(); window.scrollTo(0, 0);
+  function open(k) { UI.view = k; document.body.dataset.plusView = k || ""; try { sessionStorage.setItem("mimi-plus", k || ""); } catch (e) {} render(); window.scrollTo(0, 0);
     if (k === "mots") newMots().forEach(m => write(updateDoc(refOf("mots", m.id), { seen: true }))); }
 
   function renderBadge() {
@@ -815,7 +846,8 @@ export function initPlus(ctx) {
       if (s) write(updateDoc(refOf("stock", s.id), { level: "plein", at: Date.now() }));
     },
     tick: render,
-    showMenuRoot: () => { UI.view = null; try { sessionStorage.removeItem("mimi-plus"); } catch (e) {} render(); },
+    openMotSheet,
+    showMenuRoot: () => { UI.view = null; document.body.dataset.plusView = ""; try { sessionStorage.removeItem("mimi-plus"); } catch (e) {} render(); },
     openView: k => open(k && R[k] && !R[k].external ? k : null),
     todayData: () => ({
       frigo: S.frigo.filter(urgent).sort((a, b) => a.dlc.localeCompare(b.dlc)).map(f => f.name),

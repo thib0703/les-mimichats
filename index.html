@@ -167,6 +167,11 @@
     </div>
   </nav>
 
+  <!-- Bulle « mot doux », visible sur tous les écrans -->
+  <button type="button" class="mot-fab" id="motFab" aria-label="Envoyer un mot doux">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M12 13.2s-3-1.8-3-3.6a1.5 1.5 0 0 1 3-.4 1.5 1.5 0 0 1 3 .4c0 1.8-3 3.6-3 3.6z" class="fab-heart"/></svg>
+  </button>
+
   <div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button type="button" id="toastAct" hidden></button></div>
 
   <!-- Fiche de modification -->
@@ -176,6 +181,19 @@
   <!-- Planifier une recette -->
   <div class="sheet-bg" id="recSheetBg" hidden></div>
   <aside class="sheet rec-sheet" id="recSheet" hidden aria-label="Planifier une recette"></aside>
+
+  <!-- Écrire un mot doux (depuis la bulle ou Aujourd'hui) -->
+  <div class="sheet-bg" id="motSheetBg" hidden></div>
+  <aside class="sheet" id="motSheet" hidden aria-label="Envoyer un mot doux">
+    <h2 id="motSheetTitle">Un mot doux</h2>
+    <form id="motSheetForm" class="stack-s" autocomplete="off">
+      <textarea id="qmText" rows="3" maxlength="500" aria-label="Message"></textarea>
+      <div class="pin-opts"><label class="checkline" for="qmPin"><input type="checkbox" id="qmPin"> <span id="qmPinLabel">Épingler sur son écran</span></label>
+        <label class="pin-time" for="qmPinTime">Revenir sur son écran verrouillé chaque jour à <input type="time" id="qmPinTime"><small>Laisse vide pour ne pas le renvoyer.</small></label></div>
+      <div class="add-row wrap-row"><button class="btn" type="submit">Envoyer ♥</button><button class="linkbtn" type="button" id="qmCancel">Annuler</button>
+        <button class="linkbtn qm-all" type="button" id="qmAll">Voir tous les mots</button></div>
+    </form>
+  </aside>
 
   <!-- Réglages -->
   <div class="sheet-bg" id="sheetBg" hidden></div>

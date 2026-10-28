@@ -68,7 +68,7 @@ $("themeChips").onclick = e => { const b = e.target.closest("[data-theme-choice]
 // ---------- Onglets ----------
 let tab = "aujourdhui"; try { tab = localStorage.getItem("mimi-tab") || "aujourdhui"; } catch (e) {}
 function showTab(t) {
-  tab = t;
+  tab = t; document.body.dataset.tab = t;
   document.querySelectorAll("[data-tab]").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t || (t === "envies" && b.dataset.tab === "plus")));
   for (const v of ["aujourdhui", "courses", "agenda", "repas", "taches", "envies", "plus"]) $("v-" + v).hidden = v !== t;
   if (t === "aujourdhui") renderToday();
@@ -749,7 +749,11 @@ function renderToday() {
       <p class="day-hero-date">${esc(cap(FMT_DAY.format(parse(t))))}</p>
       <h2 class="day-hero-hello">${hour < 5 || hour >= 18 ? "Bonsoir" : "Bonjour"}${nom ? " " + esc(nom) : ""}</h2>
       <p class="day-hero-sum">${esc(summary)}</p>
-    </header>`;
+    </header>
+    <button type="button" class="mot-cta" data-mot-doux>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/><path d="M12 13.2s-3-1.8-3-3.6a1.5 1.5 0 0 1 3-.4 1.5 1.5 0 0 1 3 .4c0 1.8-3 3.6-3 3.6z" class="fab-heart"/></svg>
+      <span>Envoyer un mot doux<small>Un petit mot pour ${esc(MEMBRES[me === "thib" ? "eva" : "thib"]?.nom || "l'autre")}</small></span><span class="chev" aria-hidden="true">›</span>
+    </button>`;
   const cyLine = cycleApi ? cycleApi.todayLine() : "";
   if (cyLine) h += `<button type="button" class="cy-today" data-go="plus:cycle"><span class="cy-drop" aria-hidden="true"></span><span>${esc(cyLine)}</span><span class="chev" aria-hidden="true">›</span></button>`;
 
@@ -797,6 +801,7 @@ function renderToday() {
   el.innerHTML = h;
 }
 $("v-aujourdhui").addEventListener("click", e => {
+  if (e.target.closest("[data-mot-doux]")) { if (plusApi) plusApi.openMotSheet(); return; }
   const g = e.target.closest("[data-go]");
   if (g) { const [tabName, sub] = g.dataset.go.split(":"); if (tabName === "plus" && plusApi) plusApi.openView(sub || null); showTab(tabName); return; }
   const sl = e.target.closest("[data-today-slot]");
