@@ -1,0 +1,3 @@
+#!/bin/sh
+# Met à jour le programme des notifications (à lancer depuis Cloud Shell : cd mimi, git pull, sh maj)
+cd "$(dirname "$0")/serveur" && npx -y firebase-tools@latest deploy --only functions --project les-mimichats --force
