@@ -4,7 +4,8 @@
 // Variables fournies : API (adresse des données, avec la clé) et APP (adresse de l'appli).
 
 // ---------- Couleurs (les mêmes que l'appli, en clair et en sombre) ----------
-const C = (light, dark) => Color.dynamic(new Color(light), new Color(dark));
+// Toujours en sombre (choix de Thib), même quand l'iPhone est en mode clair.
+const C = (light, dark) => new Color(dark);
 const fond = C("#FFFFFF", "#171717");
 const encre = C("#111111", "#F2F2F2");
 const gris = C("#8A8A8A", "#8F8F8F");
