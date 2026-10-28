@@ -168,7 +168,7 @@ exports.widget = onRequest({ region: REGION }, async (req, res) => {
     if (e.who && e.who !== "deux" && e.who !== who) continue;
     for (const s of startsBetween(e, day, addDays(day, 14))) {
       if (s === day && e.time && e.time < hm) continue;
-      evs.push({ title: e.title || "", date: s, time: e.time || "" });
+      evs.push({ title: e.title || "", date: s, time: e.time || "", who: e.who || "deux" });
     }
   }
   evs.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
@@ -178,16 +178,20 @@ exports.widget = onRequest({ region: REGION }, async (req, res) => {
   // Tâches à faire de la personne (et celles « pour vous deux ») : en retard et aujourd'hui d'abord.
   const taches = ts.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.who === who || x.who === "deux" || !x.who)
     .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (b.at || 0) - (a.at || 0))
-    .map(x => ({ id: x.id, title: x.title || "", late: !!(x.due && x.due < day), today: x.due === day,
+    .map(x => ({ id: x.id, who: x.who || "deux", title: x.title || "", late: !!(x.due && x.due < day), today: x.due === day,
       when: !x.due ? "" : x.due < day ? "En retard" : quand(x.due) }));
 
   res.json({
     other: NOMS[other],
     mot: mot ? { text: mot.text || "", at: mot.at || 0, pinned: !!mot.pinned } : null,
-    mots: mots.slice(0, 4).map(m => ({ text: m.text || "", at: m.at || 0, pinned: !!m.pinned })),
+    mots: mots.slice(0, 4).map(m => ({ text: m.text || "", at: m.at || 0, pinned: !!m.pinned })), from: other,
     courses: { n: courses.length, names: courses.slice(0, 30), items: items.slice(0, 30) },
     taches: { n: taches.length, urgent: taches.filter(x => x.late || x.today).length, list: taches.slice(0, 14) },
-    events: evs.slice(0, 10).map(e => ({ title: e.title, when: quand(e.date) + (e.time ? " " + e.time.replace(":", "h") : "") }))
+    events: evs.slice(0, 10).map(e => ({ title: e.title, who: e.who, today: e.date === day, time: e.time ? e.time.replace(":", "h") : "",
+      when: quand(e.date) + (e.time ? " " + e.time.replace(":", "h") : "") })),
+    today: { weekday: new Intl.DateTimeFormat("fr-FR", { weekday: "long", timeZone: "Europe/Paris" }).format(new Date()),
+      day: Number(day.slice(8, 10)), month: new Intl.DateTimeFormat("fr-FR", { month: "long", timeZone: "Europe/Paris" }).format(new Date()) },
+    me: who
   });
 });
 
