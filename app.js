@@ -9,6 +9,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "http
 import { firebaseConfig, MEMBRES } from "./firebase-config.js";
 import { initPlus } from "./plus.js";
 import { initNotif } from "./notif.js";
+import { initWidget } from "./widget.js";
 import { initRecettes } from "./recettes.js";
 import { initCycle } from "./cycle.js";
 import { createUI } from "./ui.js";
@@ -156,7 +157,7 @@ function toggleCourse(i) {
     const info = plusApi ? plusApi.ranger(i) : null;
     const aid = "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     write(setDoc(ref("achats", aid), { name: i.name, cat: i.cat || "Autre", qty: i.qty || "", by: me, at: Date.now(), day: today() }));
-    write(updateDoc(ref("courses", i.id), { done: true, rangement: info || null, achatId: aid }));
+    write(updateDoc(ref("courses", i.id), { done: true, doneBy: me, rangement: info || null, achatId: aid }));
     if (info) toast(`${i.name} → ${info.where}`, { label: "Pas rangé", fn: () => { plusApi && plusApi.deranger(info); write(updateDoc(ref("courses", i.id), { rangement: null })); } });
   } else {
     if (i.rangement && plusApi) plusApi.deranger(i.rangement);
@@ -924,6 +925,7 @@ function start(user) {
     setMeal, showWeek: date => { weekStart = mondayOf(date); showRepasView("semaine"); } });
   unsub.push(recApi.stop);
   initNotif({ $, fb, db, doc, setDoc, getMe: () => me, toast });
+  initWidget({ $, db, doc, getDoc, setDoc, getMe: () => me, toast, MEMBRES });
 }
 
 // Qui est connecté : on compare l'empreinte de l'adresse avec celles de firebase-config.js.

@@ -1,6 +1,7 @@
 // Les mimichats — envoi des notifications (tourne sur les serveurs Firebase).
 // Prévient l'autre personne quand quelque chose est ajouté, et rappelle les factures la veille.
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentCreated, onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
@@ -69,6 +70,75 @@ exports.nouveaute = onDocumentCreated({ document: "foyer/main/{liste}/{id}", reg
   if (liste === "depenses") {
     return sendTo(by, { title: "Nouvelle dépense", body: `${nom} : ${d.title} (${euros(d.amount)})`, tag: "depenses" });
   }
+});
+
+// ---------- Quelqu'un coche les courses ----------
+// Premier article coché (après 30 min sans rien cocher) : « Thib est aux courses », pour que l'autre ajoute ce qui manque.
+// Ensuite, plus rien… jusqu'au dernier article : « Courses terminées ». Pas une notif par article.
+exports.coursesCochees = onDocumentUpdated({ document: "foyer/main/courses/{id}", region: REGION }, async event => {
+  const before = event.data.before.data() || {}, after = event.data.after.data() || {};
+  if (before.done || !after.done) return;
+  const by = after.doneBy;
+  if (by !== "thib" && by !== "eva") return;
+  const nom = NOMS[by];
+  const ref = db.doc("foyer/main/meta/notif");
+  const debut = await db.runTransaction(async t => {
+    const doc = await t.get(ref);
+    const last = (doc.exists && doc.get("coche_" + by)) || 0;
+    t.set(ref, { ["coche_" + by]: Date.now() }, { merge: true });
+    return Date.now() - last > 30 * 60 * 1000;
+  });
+  const reste = await db.collection("foyer/main/courses").where("done", "==", false).get();
+  if (reste.empty) {
+    return sendTo(by, { title: "Courses terminées ✓", body: `${nom} a tout pris, la liste est vide.`, tag: "panier" });
+  }
+  if (debut) {
+    const n = reste.size;
+    return sendTo(by, { title: `${nom} est aux courses 🛒`,
+      body: `${after.name} est dans le panier, encore ${n} article${n > 1 ? "s" : ""}. Ajoute vite ce qui manque !`, tag: "panier" });
+  }
+});
+
+// ---------- Widget de l'écran d'accueil (appli Scriptable) ----------
+// Renvoie le dernier mot doux, les courses et les prochains événements. Protégé par une clé
+// propre à chacun, créée dans les réglages de l'appli et rangée dans foyer/main/meta/widget.
+exports.widget = onRequest({ region: REGION }, async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const who = String(req.query.who || ""), k = String(req.query.k || "");
+  if ((who !== "thib" && who !== "eva") || k.length < 20) return res.status(400).json({ error: "Lien incomplet" });
+  const keys = await db.doc("foyer/main/meta/widget").get();
+  if (!keys.exists || keys.get(who) !== k) return res.status(403).json({ error: "Clé refusée : recrée le widget dans les réglages" });
+  const other = who === "thib" ? "eva" : "thib";
+
+  const [cs, ms, es] = await Promise.all([
+    db.collection("foyer/main/courses").where("done", "==", false).get(),
+    db.collection("foyer/main/mots").where("from", "==", other).get(),
+    db.collection("foyer/main/events").get()
+  ]);
+  const courses = cs.docs.map(d => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0)).map(c => c.name);
+  const mots = ms.docs.map(d => d.data()).sort((a, b) => (b.at || 0) - (a.at || 0));
+  const mot = mots.find(m => m.pinned) || mots[0] || null;
+
+  const nowL = parisLocal(new Date()), day = nowL.slice(0, 10), hm = nowL.slice(11);
+  const evs = [];
+  for (const doc of es.docs) {
+    const e = doc.data();
+    if (e.who && e.who !== "deux" && e.who !== who) continue;
+    for (const s of startsBetween(e, day, addDays(day, 14))) {
+      if (s === day && e.time && e.time < hm) continue;
+      evs.push({ title: e.title || "", date: s, time: e.time || "" });
+    }
+  }
+  evs.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const quand = s => s === day ? "Aujourd'hui" : s === addDays(day, 1) ? "Demain"
+    : new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", timeZone: "Europe/Paris" }).format(new Date(s + "T12:00:00Z"));
+
+  res.json({
+    other: NOMS[other],
+    mot: mot ? { text: mot.text || "", at: mot.at || 0, pinned: !!mot.pinned } : null,
+    courses: { n: courses.length, names: courses.slice(0, 8) },
+    events: evs.slice(0, 3).map(e => ({ title: e.title, when: quand(e.date) + (e.time ? " " + e.time.replace(":", "h") : "") }))
+  });
 });
 
 // ---------- Rappels d'événements ----------
