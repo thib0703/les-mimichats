@@ -924,3 +924,18 @@ body:has(#toast:not([hidden])) .fab{transform:translateY(-62px)}
 .hist-dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--deux)}
 .hist-dot.thib{background:var(--thib)} .hist-dot.eva{background:var(--eva)}
 .hist-in{flex:none;font-size:.72rem;color:var(--muted)}
+/* Mot doux épinglé */
+.pin-banner{border-radius:var(--r);padding:12px 14px;margin-bottom:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;color:var(--person-ink);background:var(--deux);box-shadow:0 0 0 3px color-mix(in srgb,var(--deux) 25%,transparent)}
+.pin-banner.thib{background:var(--thib);box-shadow:0 0 0 3px color-mix(in srgb,var(--thib) 25%,transparent)}
+.pin-banner.eva{background:var(--eva);box-shadow:0 0 0 3px color-mix(in srgb,var(--eva) 25%,transparent)}
+.pin-banner .btn{background:var(--person-ink);color:#111111}
+.pin-banner .btn.ghost{background:transparent;color:var(--person-ink);border-color:currentColor}
+.pin-banner .mb-txt{font-size:1.02rem}
+.pin-ico{width:13px;height:13px;fill:currentColor;vertical-align:-2px;margin-right:4px}
+.pin-line{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:.72rem;opacity:.9;margin-top:2px}
+.pin-off{border:0;background:rgba(255,255,255,.22);color:inherit;border-radius:999px;padding:2px 8px;font:600 .7rem Figtree,sans-serif;cursor:pointer}
+.pin-opts{display:grid;gap:8px}
+.pin-time{display:none;gap:4px;font-size:.85rem;color:var(--muted)}
+.pin-time input{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:9px 12px;font-size:1rem;color:var(--ink);max-width:160px}
+.pin-time small{font-size:.74rem}
+.pin-opts:has(#motPin:checked) .pin-time{display:grid}

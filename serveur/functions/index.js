@@ -145,6 +145,17 @@ exports.rappelsEvenements = onSchedule({ schedule: "every 15 minutes", timeZone:
       }
     }
   }
+  // Mots doux épinglés : renvoyés chaque jour à l'heure choisie, jusqu'à ce qu'on les désépingle.
+  const psnap = await db.collection("foyer/main/mots").where("pinned", "==", true).get();
+  for (const doc of psnap.docs) {
+    const m = doc.data();
+    if (!/^\d{2}:\d{2}$/.test(m.pinTime || "")) continue;
+    const at = day + "T" + m.pinTime, key = "p_" + doc.id + "_" + day;
+    if (at > fromL && at <= nowL && !sent[key] && !updates[key]) {
+      await sendTo(m.from, { title: `Mot épinglé de ${NOMS[m.from] || "l'autre"}`, body: m.text, tag: "pin-" + doc.id });
+      updates[key] = Date.now();
+    }
+  }
   // Garde seulement les 4 derniers jours d'historique.
   const keep = {}; const limit = Date.now() - 4 * 864e5;
   for (const [k, v] of Object.entries({ ...sent, ...updates })) if (v > limit) keep[k] = v;

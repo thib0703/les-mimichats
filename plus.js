@@ -489,23 +489,33 @@ export function initPlus(ctx) {
 
   // ----- Mots doux -----
   const newMots = () => S.mots.filter(m => m.from !== me() && !m.seen);
+  const PIN = '<svg class="pin-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 6 4 3v2h-5v7l-1 1-1-1v-7H6v-2l4-3z"/></svg>';
+  const pinTimeLabel = t => t ? `revient chaque jour à ${t.replace(":", "h")}` : "";
+  const pinnedFor = who => S.mots.filter(m => m.pinned && m.from !== who).sort((a, b) => b.at - a.at)[0];
   R.mots = {
     label: "Mots doux", icon: '<path d="M4 5h16v11H9l-5 4z"/>',
     summary: () => newMots().length ? plural(newMots().length, "nouveau mot").replace("nouveau mots", "nouveaux mots") : "Laisser un mot à l'autre",
     render() {
       const list = S.mots.slice().sort((a, b) => a.at - b.at).slice(-60);
       return `<div class="chat">${list.length ? list.map(m => `<div class="msg ${m.from === me() ? "mine" : "theirs"}"><span class="avatar av-${esc(m.from)}">${esc((MEMBRES[m.from]?.nom || "?").charAt(0))}</span><div class="bubble ${m.from === me() ? "mine" : "theirs"} ${esc(m.from)}">
-          <span>${esc(m.text)}</span><small>${esc(new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(m.at)))}${m.from === me() && m.seen ? " · lu" : ""}</small></div></div>`).join("")
+          <span>${esc(m.text)}</span><small>${esc(new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(m.at)))}${m.from === me() && m.seen ? " · lu" : ""}</small>
+          ${m.pinned ? `<span class="pin-line">${PIN}Épinglé${m.pinTime ? " · " + esc(pinTimeLabel(m.pinTime)) : ""}<button type="button" class="pin-off" data-act="unpin" data-id="${esc(m.id)}">Désépingler</button></span>` : ""}</div></div>`).join("")
           : empty("Laissez-vous des petits mots :<br>ils s'affichent en haut de l'appli chez l'autre.")}</div>
         <form class="add card" data-form="mots" autocomplete="off">
           <textarea id="motText" rows="2" maxlength="500" placeholder="Un mot pour ${esc(MEMBRES[other()].nom)}…" aria-label="Message"></textarea>
+          <div class="pin-opts"><label class="checkline" for="motPin"><input type="checkbox" id="motPin"> Épingler sur l'écran de ${esc(MEMBRES[other()].nom)}</label>
+            <label class="pin-time" for="motPinTime">Revenir sur son écran verrouillé chaque jour à <input type="time" id="motPinTime"><small>Laisse vide pour ne pas le renvoyer.</small></label></div>
           <div class="add-row"><span class="hint">${esc(MEMBRES[other()].nom)} le verra en ouvrant l'appli.</span><button class="btn" type="submit">Envoyer</button></div>
         </form>`;
     },
     submit() {
       const text = $("motText").value.trim(); if (!text) return;
-      write(addDoc(pathOf("mots"), { text, from: me(), by: me(), seen: false, at: Date.now() }));
-      $("motText").value = "";
+      const pinned = !!($("motPin") && $("motPin").checked), pinTime = pinned && $("motPinTime") ? $("motPinTime").value : "";
+      // Un seul mot épinglé à la fois : le nouveau remplace l'ancien.
+      if (pinned) S.mots.filter(m => m.pinned && m.from === me()).forEach(m => write(updateDoc(refOf("mots", m.id), { pinned: false })));
+      write(addDoc(pathOf("mots"), { text, from: me(), by: me(), seen: false, at: Date.now(), pinned, pinTime }));
+      $("motText").value = ""; if ($("motPin")) $("motPin").checked = false; if ($("motPinTime")) $("motPinTime").value = "";
+      if (pinned) toast(`Mot épinglé${pinTime ? " · il reviendra chaque jour à " + pinTime.replace(":", "h") : ""}`);
     }
   };
 
@@ -605,13 +615,26 @@ export function initPlus(ctx) {
     const b = $("bPlus"); if (b) { b.hidden = !n; b.textContent = n; }
   }
   function renderBanner() {
-    const m = newMots().sort((a, b) => b.at - a.at)[0];
+    // Mot épinglé par l'autre : il reste en haut de l'appli jusqu'à ce qu'on le désépingle.
+    const pin = pinnedFor(me()), pb = $("pinBanner");
+    if (pb) {
+      pb.hidden = !pin; pb.className = "pin-banner" + (pin ? " " + pin.from : "");
+      if (pin) pb.innerHTML = `<span class="mb-txt"><small>${PIN}Épinglé par ${esc(whoName(pin.from))}</small>${esc(pin.text)}</span>
+        <span class="mb-btns">${pin.seen ? "" : `<button type="button" class="btn" data-pb="seen">♥</button>`}<button type="button" class="btn ghost" data-pb="unpin" data-id="${esc(pin.id)}">Désépingler</button></span>`;
+    }
+    const m = newMots().filter(x => !(pin && x.id === pin.id)).sort((a, b) => b.at - a.at)[0];
     const el = $("motBanner"); if (!el) return;
     el.hidden = !m;
     el.className = "mot-banner" + (m ? " " + m.from : "");
     if (m) el.innerHTML = `<span class="mb-txt"><small>${esc(whoName(m.from))} t'a laissé un mot</small>${esc(m.text)}</span>
       <span class="mb-btns"><button type="button" class="btn ghost" data-mb="reply">Répondre</button><button type="button" class="btn" data-mb="seen">Lu ♥</button></span>`;
   }
+  const pbEl = $("pinBanner");
+  if (pbEl) pbEl.addEventListener("click", e => {
+    const b = e.target.closest("[data-pb]"); if (!b) return; const pin = pinnedFor(me()); if (!pin) return;
+    if (b.dataset.pb === "seen") write(updateDoc(refOf("mots", pin.id), { seen: true }));
+    else { write(updateDoc(refOf("mots", pin.id), { pinned: false, seen: true })); toast("Mot désépinglé"); }
+  });
   $("motBanner").addEventListener("click", e => {
     const b = e.target.closest("[data-mb]"); if (!b) return;
     newMots().forEach(m => write(updateDoc(refOf("mots", m.id), { seen: true })));
@@ -675,6 +698,7 @@ export function initPlus(ctx) {
         VALISE_BASE.forEach(([name, cat]) => { if (!have.has(name.toLowerCase())) { n++; write(addDoc(pathOf("valise"), { name, cat, who: "deux", packed: false, by: me(), at: Date.now() })); } });
         toast(n ? `${n} objets ajoutés` : "Tout y est déjà"); break; }
       case "toggle": if (item && R[k].toggle) R[k].toggle(item); break;
+      case "unpin": { const m = S.mots.find(x => x.id === id); if (m) { write(updateDoc(refOf("mots", m.id), { pinned: false })); toast("Mot désépinglé"); } break; }
       case "settle": UI.confirmSettle = true; render(); break;
       case "settle-no": UI.confirmSettle = false; render(); break;
       case "settle-yes": { UI.confirmSettle = false; const open = S.depenses.filter(d => !d.settled);
