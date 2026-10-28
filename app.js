@@ -482,7 +482,7 @@ function newEvent(date) {
 $("addEventBtn").onclick = () => newEvent();
 
 // ================= TÂCHES =================
-let tasks = [], taskFilter = "todo";
+let tasks = [], taskFilter = "todo", showRecur = false;
 const RECUR = { none: "", daily: "Tous les jours", weekly: "Chaque semaine", biweekly: "Toutes les 2 semaines", monthly: "Chaque mois" };
 const TASK_REMIND = [["none", "Pas de rappel"], ["jour", "Le jour même"], ["veille", "La veille"]];
 const remindLabel = x => x.remind && x.remind !== "none" ? `rappel ${x.remind === "veille" ? "la veille " : ""}à ${(x.remindTime || "20:00").replace(":", "h")}` : "";
@@ -499,16 +499,30 @@ function dueLabel(task) {
   if (task.due === addDays(t, 1)) return "Demain";
   return esc(FMT_SHORT.format(parse(task.due)));
 }
+// Tâches qui reviennent (tous les mardis…) : visibles seulement le jour J.
+// Si le jour est passé sans qu'elle soit cochée, elle passe directement à la prochaine fois.
+const isRecur = x => x.recur && x.recur !== "none";
+const visibleTodo = () => tasks.filter(x => !x.done && !(isRecur(x) && x.due && x.due > today()));
+const rolled = new Set();
+function rollRecurring() {
+  const t = today();
+  for (const x of tasks) if (!x.done && isRecur(x) && x.due && x.due < t && !rolled.has(x.id + x.due)) {
+    rolled.add(x.id + x.due); write(updateDoc(ref("taches", x.id), { due: nextDue(x.due, x.recur), missed: (x.missed || 0) + 1 }));
+  }
+}
 function renderFilter() {
-  const todo = tasks.filter(x => !x.done);
+  const todo = visibleTodo();
   const n = k => k === "done" ? tasks.filter(x => x.done).length : k === "todo" ? todo.length : todo.filter(x => x.who === k || x.who === "deux").length;
   const F = [["todo", "Tout"], ["thib", MEMBRES.thib.nom], ["eva", MEMBRES.eva.nom], ["done", "Faites"]];
   $("taskFilter").innerHTML = F.map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${k === taskFilter}">${esc(l)}<small>${n(k)}</small></button>`).join("");
 }
 $("taskFilter").onclick = e => { const b = e.target.closest("[data-f]"); if (b) { taskFilter = b.dataset.f; renderFilter(); renderTasks(); } };
 function renderTasks() {
+  rollRecurring();
   const t = today(), weekEnd = addDays(t, 6);
-  const todo = tasks.filter(x => !x.done);
+  const todo = visibleTodo();
+  const later = tasks.filter(x => !x.done && isRecur(x) && x.due && x.due > t)
+    .filter(x => taskFilter === "todo" || x.who === taskFilter || x.who === "deux").sort((a, b) => a.due.localeCompare(b.due));
   const urgent = todo.filter(x => !x.due || x.due <= t).length;
   $("bTaches").hidden = !urgent; $("bTaches").textContent = urgent;
   const late = todo.filter(x => x.due && x.due < t).length, now = todo.filter(x => x.due === t).length;
@@ -518,15 +532,17 @@ function renderTasks() {
     : taskFilter === "todo" ? todo
     : todo.filter(x => x.who === taskFilter || x.who === "deux");
   list = list.slice().sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || (b.at || 0) - (a.at || 0));
+  const laterHtml = taskFilter === "done" || !later.length ? "" : `<section class="aisle cart recur-later"><div class="toolbar"><button type="button" class="cart-toggle" data-recur-toggle aria-expanded="${showRecur}">Tâches qui reviennent<span>${later.length}</span></button></div>
+    ${showRecur ? `<ul class="list">${later.map(rowTask).join("")}</ul>` : `<p class="small muted recur-hint">Elles s'affichent seulement le jour où il faut les faire.</p>`}</section>`;
   if (!list.length) {
-    $("taskList").innerHTML = `<div class="empty-state"><p><strong>${taskFilter === "done" ? "Aucune tâche terminée" : "Rien à faire"}</strong></p><p>${taskFilter === "done" ? "Les tâches cochées apparaîtront ici." : "Profitez-en, ou ajoutez une tâche avec le +."}</p></div>`;
+    $("taskList").innerHTML = `<div class="empty-state"><p><strong>${taskFilter === "done" ? "Aucune tâche terminée" : "Rien à faire"}</strong></p><p>${taskFilter === "done" ? "Les tâches cochées apparaîtront ici." : "Profitez-en, ou ajoutez une tâche avec le +."}</p></div>` + laterHtml;
     return;
   }
   if (taskFilter === "done") { $("taskList").innerHTML = `<ul class="list">${list.slice(0, 60).map(rowTask).join("")}</ul>`; return; }
   const groups = [["En retard", x => x.due && x.due < t], ["Aujourd'hui", x => x.due === t], ["Cette semaine", x => x.due > t && x.due <= weekEnd],
     ["Plus tard", x => x.due > weekEnd], ["Sans date", x => !x.due]];
   $("taskList").innerHTML = groups.map(([title, f]) => { const g = list.filter(f); return g.length
-    ? `<section class="aisle"><h3 class="aisle-title${title === "En retard" ? " late-title" : ""}">${title}<span>${g.length}</span></h3><ul class="list">${g.map(rowTask).join("")}</ul></section>` : ""; }).join("");
+    ? `<section class="aisle"><h3 class="aisle-title${title === "En retard" ? " late-title" : ""}">${title}<span>${g.length}</span></h3><ul class="list">${g.map(rowTask).join("")}</ul></section>` : ""; }).join("") + laterHtml;
 }
 function rowTask(x) {
   const meta = [dueLabel(x), RECUR[x.recur || "none"], remindLabel(x) ? `<span class="remind-tag">${BELL}${esc(remindLabel(x))}</span>` : ""].filter(Boolean).join(" · ");
@@ -551,7 +567,7 @@ function handleTaskClick(e) {
     write(updateDoc(ref("taches", x.id), { done: !x.done, lastDoneBy: me, lastDoneAt: Date.now() }));
   }
 }
-$("taskList").onclick = handleTaskClick;
+$("taskList").onclick = e => { if (e.target.closest("[data-recur-toggle]")) { showRecur = !showRecur; renderTasks(); return; } handleTaskClick(e); };
 const BELL = '<svg class="bell" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/></svg>';
 const TASK_FIELDS = [{ key: "title", label: "Tâche", type: "text", required: true, placeholder: "Sortir les poubelles, litière…" }, { key: "who", label: "Qui s'en occupe", type: "who" },
   { key: "recur", label: "Répétition", type: "select", options: [["none", "Une fois"], ["daily", "Tous les jours"], ["weekly", "Toutes les semaines"], ["biweekly", "Toutes les 2 semaines"], ["monthly", "Tous les mois"]] },
