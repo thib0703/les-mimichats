@@ -911,18 +911,6 @@ async function uploadPhoto(file, path) {
   await uploadBytes(r, blob, { contentType: "image/jpeg" });
   return { url: await getDownloadURL(r), path };
 }
-// Photo (compressée) ou vidéo (envoyée telle quelle, 200 Mo maximum).
-async function uploadMedia(file, basePath) {
-  if ((file.type || "").startsWith("video/")) {
-    if (file.size > 200 * 1024 * 1024) { const e = new Error("too big"); e.tooBig = true; throw e; }
-    if (!storage) storage = getStorage(fb);
-    const ext = (file.name.split(".").pop() || "mp4").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp4";
-    const path = basePath + "." + ext, r = storageRef(storage, path);
-    await uploadBytes(r, file, { contentType: file.type || "video/mp4" });
-    return { url: await getDownloadURL(r), path, type: "video" };
-  }
-  return { ...(await uploadPhoto(file, basePath + ".jpg")), type: "image" };
-}
 
 // ---------- Démarrage ----------
 function fillWho() {
@@ -963,7 +951,7 @@ function start(user) {
   cycleApi.onChange(() => { renderEvents(); renderToday(); });
   unsub.push(cycleApi.stop);
   plusApi = initPlus({ $, esc, write, col, ref, pcol, pref, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, MEMBRES, whoName, cycle: cycleApi,
-    today, addDays, addMonths, parse, cap, CHECK, addCourse, toast, safeUrl, host, ui, uploadPhoto, uploadMedia,
+    today, addDays, addMonths, parse, cap, CHECK, addCourse, toast, safeUrl, host, ui, uploadPhoto,
     getMe: () => me, showTab, currentTab: () => tab, getCourses: () => courses,
     enviesSummary: () => { const o = wishes.filter(w => !w.bought); const sum = o.reduce((a, w) => a + (Number(w.price) || 0), 0);
       return o.length ? `${o.length} envie${o.length > 1 ? "s" : ""}${sum ? " · " + euro(sum) : ""}` : "Ce que vous voulez acheter un jour"; },

@@ -402,17 +402,17 @@ export function initPlus(ctx) {
         return `<li class="row countdown${n === 0 ? " is-today" : ""}"><span class="cd-ring"></span><span class="cd-num">${n === 0 ? "Jour J" : n}</span><span class="cd-lbl">${n === 0 ? "c'est aujourd'hui" : n === 1 ? "jour" : "jours"}</span>
           <span class="txt">${esc(s.title)}<small>${esc(meta([FMT_DM.format(parse(date)), years > 0 ? plural(years, "an") : ""]))}</small></span>${del("souvenirs", s.id, s.title)}</li>`; };
       const photos = s => (s.photos || []).length ? `<span class="photos">${s.photos.map(ph => `<a href="${esc(ph.url)}" target="_blank" rel="noopener"><img src="${esc(ph.url)}" alt="" loading="lazy"></a>`).join("")}</span>` : "";
-      const addPhoto = s => `<label class="mini photo-add" for="ph-${esc(s.id)}">+ Photo ou vidéo<input type="file" id="ph-${esc(s.id)}" data-souv="${esc(s.id)}" accept="image/*,video/*" multiple hidden></label>`;
-      const slide = (s, m, j) => `<button type="button" class="dp-slide" data-act="diapo" data-id="${esc(s.id)}" data-i="${j}" aria-label="Voir en grand">${m.type === "video"
-        ? `<video src="${esc(m.url)}#t=0.1" muted playsinline loop preload="metadata"></video><span class="dp-vid" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg></span>`
-        : `<img src="${esc(m.url)}" alt="" loading="lazy">`}</button>`;
-      const rowJ = (s, i) => { const media = s.photos || [], ph = media[0];
+      const addPhoto = s => `<label class="mini photo-add" for="ph-${esc(s.id)}">+ Photo<input type="file" id="ph-${esc(s.id)}" data-souv="${esc(s.id)}" accept="image/*" multiple hidden></label>`;
+      const pics = s => (s.photos || []).filter(m => m.type !== "video");
+      const slide = (s, m, j) => `<button type="button" class="dp-slide" data-act="diapo" data-id="${esc(s.id)}" data-i="${j}" aria-label="Voir en grand"><img src="${esc(m.url)}" alt="" loading="lazy"></button>`;
+      const rowJ = (s, i) => { const media = pics(s), ph = media[0];
         return `<li class="row polaroid" style="--rot:${[-2.2, 1.6, -1, 2.4][i % 4]}deg">
           <span class="pol-photo${media.length > 1 ? " diapo" : ""}">${ph ? `<span class="dp-track">${media.map((m, j) => slide(s, m, j)).join("")}</span>${media.length > 1
               ? `<span class="dp-dots" aria-hidden="true">${media.map((m, j) => `<i${j ? "" : ' class="on"'}></i>`).join("")}</span><span class="dp-count">1/${media.length}</span>` : ""}`
-            : `<label class="pol-empty" for="ph-${esc(s.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Ajouter une photo ou une vidéo</span></label>`}</span>
+            : `<label class="pol-empty" for="ph-${esc(s.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Ajouter une photo</span></label>`}</span>
           <span class="txt"><strong class="pol-title">${esc(s.title)}</strong><small>${esc(souvWhen(s))}</small>${s.note ? `<span class="note">${esc(s.note)}</span>` : ""}</span>
-          ${ph ? addPhoto(s) : `<input type="file" id="ph-${esc(s.id)}" data-souv="${esc(s.id)}" accept="image/*,video/*" multiple hidden>`}${del("souvenirs", s.id, s.title)}</li>`; };
+          ${ph ? `<span class="pol-acts">${addPhoto(s)}${media.length > 1 ? `<button type="button" class="mini show-btn" data-act="show" data-id="${esc(s.id)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>Diaporama</button>` : ""}</span>`
+            : `<input type="file" id="ph-${esc(s.id)}" data-souv="${esc(s.id)}" accept="image/*" multiple hidden>`}${del("souvenirs", s.id, s.title)}</li>`; };
       return `${onThisDay.length ? `<div class="card hero-num"><p class="eyebrow">Ce jour-là</p>${onThisDay.map(s => `<p class="big">${esc(s.title)}</p><p class="muted small">${esc(plural(+t.slice(0, 4) - +s.date.slice(0, 4), "an"))} aujourd'hui</p>`).join("")}</div>` : ""}
         <form class="add card notebook" data-form="souvenirs" autocomplete="off">
           <p class="notebook-title">Un nouveau souvenir</p>
@@ -428,12 +428,12 @@ export function initPlus(ctx) {
           </div>
           <label class="checkline" for="souvYearly"><input type="checkbox" id="souvYearly"> Revient chaque année</label>
           <div class="add-row wrap-row">
-            <label class="btn ghost file-btn" for="souvPhotos">Photos ou vidéos<input type="file" id="souvPhotos" accept="image/*,video/*" multiple hidden></label>
+            <label class="btn ghost file-btn" for="souvPhotos">Ajouter des photos<input type="file" id="souvPhotos" accept="image/*" multiple hidden></label>
             <span class="hint" id="souvPhotosInfo"></span>
             <button class="btn" type="submit">Ajouter</button>
           </div></form>
         ${yearly.length ? `<section class="aisle"><h3 class="aisle-title">Dates à venir</h3><ul class="count-grid">${yearly.map(rowY).join("")}</ul></section>` : ""}
-        ${journal.length ? `<section class="aisle"><h3 class="aisle-title">Notre album<span>${journal.length}</span></h3><ul class="pol-grid">${journal.map(rowJ).join("")}</ul></section>` : ""}
+        ${journal.length ? `<section class="aisle"><div class="album-head"><h3 class="aisle-title">Notre album<span>${journal.length}</span></h3>${journal.some(x => pics(x).length) ? `<button type="button" class="btn show-all" data-act="show" data-id=""><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>Diaporama</button>` : ""}</div><ul class="pol-grid">${journal.map(rowJ).join("")}</ul></section>` : ""}
         ${!yearly.length && !journal.length ? empty("Gardez vos dates importantes<br>et vos meilleurs moments ici.") : ""}`;
     },
     submit() {
@@ -448,21 +448,18 @@ export function initPlus(ctx) {
     }
   };
 
-  // Envoi des photos et vidéos d'un souvenir, une par une.
+  // Envoi des photos d'un souvenir, une par une.
   async function addPhotos(id, files, existing) {
-    const list = existing.slice(); let ok = 0;
+    const list = existing.slice();
     for (let i = 0; i < files.length; i++) {
-      const f = files[i], vid = (f.type || "").startsWith("video/");
-      toast(`Envoi ${vid ? "de la vidéo" : "des photos"} : ${i + 1} sur ${files.length}…`, null, 120000);
-      try { list.push(await ctx.uploadMedia(f, `foyer/souvenirs/${id}/${Date.now()}-${i}`)); ok++; write(updateDoc(refOf("souvenirs", id), { photos: list })); }
-      catch (err) { console.error(err);
-        toast(err && err.tooBig ? "Cette vidéo est trop lourde (200 Mo maximum)." : vid ? "La vidéo n'a pas pu être envoyée." : "La photo n'a pas pu être envoyée. Les photos demandent la formule Blaze de Firebase (étape 9 du guide).");
-        if (!vid) return; }
+      toast(`Envoi des photos : ${i + 1} sur ${files.length}…`, null, 60000);
+      try { list.push(await ctx.uploadPhoto(files[i], `foyer/souvenirs/${id}/${Date.now()}-${i}.jpg`)); write(updateDoc(refOf("souvenirs", id), { photos: list })); }
+      catch (err) { console.error(err); toast("La photo n'a pas pu être envoyée. Les photos demandent la formule Blaze de Firebase (étape 9 du guide)."); return; }
     }
-    if (ok) toast(ok > 1 ? `${ok} photos et vidéos ajoutées` : files[0].type.startsWith("video/") ? "Vidéo ajoutée" : "Photo ajoutée");
+    toast(files.length > 1 ? `${files.length} photos ajoutées` : "Photo ajoutée");
   }
   root.addEventListener("change", e => {
-    if (e.target.id === "souvPhotos") { const n = e.target.files.length; $("souvPhotosInfo").textContent = n ? `${n} fichier${n > 1 ? "s" : ""} choisi${n > 1 ? "s" : ""}` : ""; return; }
+    if (e.target.id === "souvPhotos") { const n = e.target.files.length; $("souvPhotosInfo").textContent = n ? `${n} photo${n > 1 ? "s" : ""} choisie${n > 1 ? "s" : ""}` : ""; return; }
     if (e.target.id === "souvMulti") { const on = e.target.checked; $("souvEndRow").hidden = !on;
       if (on && !$("souvEnd").value) { const d = $("souvDate").value || today(); $("souvEnd").value = addDays(d, 2); } if (on) $("souvEnd").min = $("souvDate").value; return; }
     if (e.target.id === "souvDate" && $("souvEnd")) { $("souvEnd").min = e.target.value; if ($("souvEnd").value && $("souvEnd").value <= e.target.value) $("souvEnd").value = addDays(e.target.value, 1); return; }
@@ -715,6 +712,7 @@ export function initPlus(ctx) {
     const item = k && id ? S[k].find(x => x.id === id) : null;
     switch (a) {
       case "open": open(k); break;
+      case "show": startShow(id); break;
       case "diapo": { const sv = S.souvenirs.find(x => x.id === id); if (sv) openDiapo(sv, +b.dataset.i || 0); break; }
       case "back": open(null); break;
       case "goto": ctx.showTab(k); break;
@@ -798,37 +796,137 @@ export function initPlus(ctx) {
     const box = track.parentElement;
     box.querySelectorAll(".dp-dots i").forEach((d, j) => d.classList.toggle("on", j === i));
     const c = box.querySelector(".dp-count"); if (c) c.textContent = `${i + 1}/${n}`;
-    [...track.querySelectorAll("video")].forEach(v => { const on = v.closest(".dp-slide") === track.children[i]; if (on) v.play().catch(() => {}); else v.pause(); });
   }
   root.addEventListener("scroll", e => { if (e.target.classList && e.target.classList.contains("dp-track")) dpSync(e.target); }, true);
   ["touchstart", "pointerdown"].forEach(ev => root.addEventListener(ev, e => { const tr = e.target.closest && e.target.closest(".dp-track"); if (tr) dpTouched.set(tr, Date.now()); }, { passive: true }));
   setInterval(() => {
-    if (UI.view !== "souvenirs" || document.hidden || $("diapoBox")) return;
+    if (UI.view !== "souvenirs" || document.hidden || $("diapoBox") || $("showBox")) return;
     root.querySelectorAll(".diapo .dp-track").forEach(tr => {
       const r = tr.getBoundingClientRect(); if (r.bottom < 0 || r.top > innerHeight) return;
       if (Date.now() - (dpTouched.get(tr) || 0) < 7000) return;
-      const v = tr.querySelector(".dp-slide:nth-child(" + (Math.round(tr.scrollLeft / Math.max(1, tr.clientWidth)) + 1) + ") video");
-      if (v && !v.paused && v.duration && v.currentTime < Math.min(v.duration, 12) - .3) return; // on laisse la vidéo jouer un peu
       const n = tr.children.length, i = Math.round(tr.scrollLeft / Math.max(1, tr.clientWidth));
       tr.scrollTo({ left: ((i + 1) % n) * tr.clientWidth, behavior: "smooth" });
     });
   }, 3500);
   // Plein écran : on glisse d'une photo / vidéo à l'autre.
   function openDiapo(sv, start) {
-    const media = sv.photos || []; if (!media.length) return;
+    const media = (sv.photos || []).filter(m => m.type !== "video"); if (!media.length) return;
     const box = document.createElement("div"); box.id = "diapoBox"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", sv.title);
     box.innerHTML = `<div class="db-head"><span class="db-title">${esc(sv.title)}<small>${esc(souvWhen(sv))}</small></span><span class="db-count"></span>
         <button type="button" class="db-close" aria-label="Fermer">×</button></div>
-      <div class="db-track">${media.map(m => `<div class="db-slide">${m.type === "video" ? `<video src="${esc(m.url)}" controls playsinline preload="metadata"></video>` : `<img src="${esc(m.url)}" alt="">`}</div>`).join("")}</div>`;
+      <div class="db-track">${media.map(m => `<div class="db-slide"><img src="${esc(m.url)}" alt=""></div>`).join("")}</div>`;
     document.body.appendChild(box); document.body.classList.add("no-scroll");
     const tr = box.querySelector(".db-track"), cnt = box.querySelector(".db-count");
-    const upd = () => { const i = Math.round(tr.scrollLeft / Math.max(1, tr.clientWidth)); cnt.textContent = media.length > 1 ? `${i + 1} / ${media.length}` : "";
-      tr.querySelectorAll("video").forEach((v, j) => { if (v.closest(".db-slide") !== tr.children[i]) v.pause(); }); };
+    const upd = () => { const i = Math.round(tr.scrollLeft / Math.max(1, tr.clientWidth)); cnt.textContent = media.length > 1 ? `${i + 1} / ${media.length}` : ""; };
     tr.addEventListener("scroll", upd, { passive: true });
     requestAnimationFrame(() => { tr.scrollLeft = start * tr.clientWidth; upd(); });
-    const close = () => { box.querySelectorAll("video").forEach(v => v.pause()); box.remove(); document.body.classList.remove("no-scroll"); document.removeEventListener("keydown", key); };
+    const close = () => { box.remove(); document.body.classList.remove("no-scroll"); document.removeEventListener("keydown", key); };
     const key = e => { if (e.key === "Escape") close(); if (e.key === "ArrowRight") tr.scrollBy({ left: tr.clientWidth, behavior: "smooth" }); if (e.key === "ArrowLeft") tr.scrollBy({ left: -tr.clientWidth, behavior: "smooth" }); };
     box.querySelector(".db-close").onclick = close; document.addEventListener("keydown", key);
+  }
+
+  // ================= Diaporama en musique =================
+  // Petite musique douce composée au hasard à chaque lancement (rien à télécharger).
+  async function makeMusic() {
+    const AC = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!AC) return null;
+    const rnd = a => a[Math.floor(Math.random() * a.length)];
+    const sr = 32000, bpm = 66 + Math.floor(Math.random() * 18), beat = 60 / bpm, bar = 4 * beat;
+    const root = 55 + Math.floor(Math.random() * 8);
+    const PROGS = [[0, 7, 9, 5], [0, 9, 5, 7], [9, 5, 0, 7], [0, 4, 5, 5], [0, 5, 9, 7], [5, 0, 7, 9]];
+    const prog = rnd(PROGS), bars = 16, loop = bars * bar, tail = 4;
+    const ctx = new AC(2, Math.ceil((loop + tail) * sr), sr);
+    const f = m => 440 * Math.pow(2, (m - 69) / 12);
+    const major = [0, 2, 4, 5, 7, 9, 11];
+    const chordOf = deg => { const i = major.indexOf(deg); return [0, 2, 4, 6].map(k => major[(i + k) % 7] + 12 * Math.floor((i + k) / 7)); };
+    // reverb
+    const ir = ctx.createBuffer(2, sr * 3, sr);
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.6); }
+    const rev = ctx.createConvolver(); rev.buffer = ir;
+    const dry = ctx.createGain(); dry.gain.value = .75; const wet = ctx.createGain(); wet.gain.value = .5;
+    const master = ctx.createGain(); master.gain.value = .55;
+    dry.connect(master); rev.connect(wet); wet.connect(master); master.connect(ctx.destination);
+    const out = n => { n.connect(dry); n.connect(rev); };
+    const piano = (m, t, v, len = 2.2) => {
+      [[1, 1], [2, .28], [3, .08]].forEach(([h, a]) => { const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = h === 1 ? "triangle" : "sine"; o.frequency.value = f(m) * h;
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * a, t + .008); g.gain.exponentialRampToValueAtTime(.0005, t + len / h);
+        o.connect(g); out(g); o.start(t); o.stop(t + len); });
+    };
+    const pad = (ms, t, d) => { const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 900; const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.035, t + .8); g.gain.setValueAtTime(.035, t + d - .6); g.gain.linearRampToValueAtTime(0, t + d + .4);
+      ms.forEach(m => [-6, 6].forEach(det => { const o = ctx.createOscillator(); o.type = "sawtooth"; o.frequency.value = f(m); o.detune.value = det; o.connect(lp); o.start(t); o.stop(t + d + .5); }));
+      lp.connect(g); out(g); };
+    const pat = rnd([[0, 2, 1, 3, 2, 1, 3, 2], [0, 1, 2, 3, 2, 1, 2, 3], [0, 2, 3, 1, 2, 3, 1, 2]]);
+    const penta = [0, 2, 4, 7, 9];
+    for (let b = 0; b < bars; b++) {
+      const t0 = b * bar, deg = prog[b % 4], ch = chordOf(deg).map(x => x + root);
+      pad([ch[0] - 12, ch[1] - 12, ch[2] - 12], t0, bar);
+      piano(ch[0] - 24, t0, .22, 3.5);
+      const sparse = b < 2 || b >= bars - 1;
+      for (let k = 0; k < 8; k++) { if (sparse && k % 2) continue; piano(ch[pat[k] % 4] + (k > 3 && b % 2 ? 12 : 0), t0 + k * beat / 2, k % 2 ? .07 : .1, 1.8); }
+      if (b >= 2 && Math.random() < .7) { const n = 1 + Math.floor(Math.random() * 3);
+        for (let k = 0; k < n; k++) piano(root + 12 + rnd(penta) + (Math.random() < .3 ? 12 : 0), t0 + (1 + Math.floor(Math.random() * 6)) * beat / 2, .07, 2.5); }
+    }
+    const buf = await ctx.startRendering();
+    // Boucle sans couture : la queue de la réverbération revient au début.
+    const L = Math.floor(loop * sr), chs = [buf.getChannelData(0), buf.getChannelData(1)];
+    for (const d of chs) for (let i = L; i < d.length; i++) d[i - L] += d[i];
+    let peak = 0; for (const d of chs) for (let i = 0; i < L; i++) peak = Math.max(peak, Math.abs(d[i]));
+    const g = peak > 0 ? .8 / peak : 1;
+    const ab = new ArrayBuffer(44 + L * 4), v = new DataView(ab), wr = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    wr(0, "RIFF"); v.setUint32(4, 36 + L * 4, true); wr(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true); wr(36, "data"); v.setUint32(40, L * 4, true);
+    for (let i = 0, o = 44; i < L; i++) for (let c = 0; c < 2; c++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, chs[c][i] * g)) * 32767, true);
+    return URL.createObjectURL(new Blob([ab], { type: "audio/wav" }));
+  }
+
+  function playSlideshow(slides) {
+    if (!slides.length || $("showBox")) return;
+    const box = document.createElement("div"); box.id = "showBox"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Diaporama");
+    box.innerHTML = `<div class="sh-stage"></div><div class="sh-cap"><span class="sh-title"></span><span class="sh-when"></span></div>
+      <div class="sh-top"><span class="sh-bar"><i></i></span><button type="button" class="sh-btn sh-sound" aria-label="Couper le son"></button><button type="button" class="sh-btn sh-close" aria-label="Fermer">×</button></div>
+      <div class="sh-pause" hidden>Pause</div>`;
+    document.body.appendChild(box); document.body.classList.add("no-scroll");
+    const stage = box.querySelector(".sh-stage"), cap = box.querySelector(".sh-cap"), bar = box.querySelector(".sh-bar i"), snd = box.querySelector(".sh-sound"), pz = box.querySelector(".sh-pause");
+    const SOUND_ON = '<svg viewBox="0 0 24 24"><path d="M4 9.5h4l5-4v13l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>';
+    const SOUND_OFF = '<svg viewBox="0 0 24 24"><path d="M4 9.5h4l5-4v13l-5-4H4z"/><path d="M17 9.5l5 5M22 9.5l-5 5"/></svg>';
+    const audio = new Audio(); audio.loop = true; let muted = false, musicUrl = null;
+    const setSnd = () => { snd.innerHTML = muted ? SOUND_OFF : SOUND_ON; snd.setAttribute("aria-label", muted ? "Remettre le son" : "Couper le son"); };
+    setSnd();
+    // Le son doit démarrer pendant le toucher (iPhone) : on lance un silence, puis la vraie musique.
+    audio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="; audio.play().catch(() => {});
+    makeMusic().then(url => { if (!document.body.contains(box)) { if (url) URL.revokeObjectURL(url); return; } if (!url) return; musicUrl = url;
+      audio.src = url; audio.volume = 0; audio.play().catch(() => {}); let v = 0; const fi = setInterval(() => { v = Math.min(.9, v + .05); audio.volume = muted ? 0 : v; if (v >= .9) clearInterval(fi); }, 120); })
+      .catch(err => console.error("musique", err));
+    snd.onclick = e => { e.stopPropagation(); muted = !muted; audio.volume = muted ? 0 : .9; setSnd(); };
+    const SHOW = 5200, FADE = 1400; let i = -1, paused = false, timer = null, startAt = 0, left = SHOW, prevKey = "";
+    const pre = slides.map(s => { const im = new Image(); im.src = s.url; return im; });
+    const moves = [["1.0", "1.12", "-2%,-1%", "2%,1%"], ["1.12", "1.0", "2%,0%", "-1%,-1%"], ["1.02", "1.14", "0,2%", "0,-2%"], ["1.14", "1.02", "-1%,1%", "1%,-1%"]];
+    function show(n) {
+      i = (n + slides.length) % slides.length; const s = slides[i], mv = moves[Math.floor(Math.random() * moves.length)];
+      const el = document.createElement("div"); el.className = "sh-slide";
+      el.innerHTML = `<div class="sh-blur" style="background-image:url('${esc(s.url)}')"></div><img src="${esc(s.url)}" alt="">`;
+      el.style.setProperty("--z0", mv[0]); el.style.setProperty("--z1", mv[1]); el.style.setProperty("--p0", mv[2]); el.style.setProperty("--p1", mv[3]); el.style.setProperty("--dur", (SHOW + FADE) + "ms");
+      stage.appendChild(el); requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add("in")));
+      [...stage.children].slice(0, -1).forEach(old => { old.classList.add("out"); setTimeout(() => old.remove(), FADE + 100); });
+      const key = s.title + s.when;
+      if (key !== prevKey) { cap.classList.remove("in"); setTimeout(() => { cap.querySelector(".sh-title").textContent = s.title; cap.querySelector(".sh-when").textContent = s.when; cap.classList.add("in"); }, prevKey ? 450 : 200); prevKey = key; }
+      bar.style.width = ((i + 1) / slides.length * 100) + "%";
+      left = SHOW; schedule();
+    }
+    function schedule() { clearTimeout(timer); if (paused) return; startAt = Date.now(); timer = setTimeout(() => show(i + 1), left); }
+    stage.parentElement.addEventListener("click", e => { if (e.target.closest(".sh-btn")) return;
+      paused = !paused; pz.hidden = !paused; box.classList.toggle("paused", paused);
+      if (paused) { clearTimeout(timer); left = Math.max(400, left - (Date.now() - startAt)); audio.pause(); } else { schedule(); if (musicUrl) audio.play().catch(() => {}); } });
+    const close = () => { clearTimeout(timer); let v = audio.volume; const fo = setInterval(() => { v = Math.max(0, v - .1); audio.volume = v; if (v <= 0) { clearInterval(fo); audio.pause(); if (musicUrl) URL.revokeObjectURL(musicUrl); } }, 40);
+      box.classList.add("closing"); setTimeout(() => { box.remove(); document.body.classList.remove("no-scroll"); }, 350); document.removeEventListener("keydown", key); };
+    const key = e => { if (e.key === "Escape") close(); if (e.key === "ArrowRight") show(i + 1); if (e.key === "ArrowLeft") show(i - 1); };
+    box.querySelector(".sh-close").onclick = e => { e.stopPropagation(); close(); }; document.addEventListener("keydown", key);
+    pre[0].decode ? pre[0].decode().catch(() => {}).finally(() => show(0)) : show(0);
+  }
+  function startShow(id) {
+    const list = (id ? S.souvenirs.filter(x => x.id === id) : S.souvenirs.filter(x => !x.yearly).sort((a, b) => (a.date || "").localeCompare(b.date || "")));
+    playSlideshow(list.flatMap(sv => (sv.photos || []).filter(m => m.type !== "video").map(m => ({ url: m.url, title: sv.title, when: souvWhen(sv) }))));
   }
 
   // ================= Synchronisation =================
