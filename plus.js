@@ -153,7 +153,17 @@ export function initPlus(ctx) {
   const meubleOf = it => S.meubles.find(m => m.id === it.meuble) || S.meubles.find(m => m.id === OLD_PLACE[it.place]) || meubles()[0];
   const catOf = it => (meubleOf(it) || {}).cat || "Autre";
   const lvlIndex = it => Math.max(0, LEVELS.findIndex(l => l[0] === it.level));
-  const lowCount = () => S.stock.filter(s => s.level === "bientot" || s.level === "vide").length;
+  // Meubles « en nombre » (par défaut ceux de la cuisine, congélateur compris) : on compte les paquets au lieu d'un niveau.
+  const counts = m => !!m && (m.count !== undefined ? !!m.count : m.room === "Cuisine");
+  // À racheter : « bientôt fini » ou « vide » pour un meuble à niveaux, 0 pour un meuble en nombre.
+  const isLow = it => counts(meubleOf(it)) ? qtyOf(it) === 0 : (it.level === "bientot" || it.level === "vide");
+  const qtyOf = it => typeof it.qty === "number" ? Math.max(0, it.qty) : (it.level === "vide" ? 0 : 1);
+  function setQty(it, q) {
+    q = Math.max(0, Math.round(q));
+    write(updateDoc(refOf("stock", it.id), { qty: q, level: q > 0 ? "plein" : "vide", at: Date.now(), by: me() }));
+    if (q === 0 && addCourse(it.name, catOf(it))) toast(`${it.name} ajouté aux courses`);
+  }
+  const lowCount = () => S.stock.filter(isLow).length;
   const jar = (i, bottle) => { const p = [1, .55, .22, 0][i];
     if (bottle) { const h = 11 * p;
       return `<svg class="jar" viewBox="0 0 16 20" aria-hidden="true"><rect class="jar-lid" x="5.5" y="0.5" width="5" height="4" rx="1"/><rect class="jar-fill" x="4" y="${(7.5 + 11 - h).toFixed(1)}" width="8" height="${h.toFixed(1)}" rx="1.2"/><path class="jar-glass" d="M6 4.5h4l2.5 3V18a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V7.5z"/></svg>`; }
@@ -163,12 +173,14 @@ export function initPlus(ctx) {
     label: "Rangements", icon: '<path d="M4 4h16v16H4z"/><path d="M4 10h16M4 15h16M12 4v6"/>',
     summary: () => lowCount() ? plural(lowCount(), "produit") + " à racheter" : S.stock.length ? "Tout est en réserve" : "Placards, congélateur, salle de bain",
     render() {
-      const item = it => { const i = lvlIndex(it), t = (meubleOf(it) || {}).type;
+      const item = it => { const i = lvlIndex(it), mb = meubleOf(it) || {}, t = mb.type;
+        if (counts(mb)) { const q = qtyOf(it);
+          return `<button type="button" class="sitem sitem-count${q === 0 ? " lvl-3" : ""} who-${esc(it.who || "deux")}" data-act="sitem" data-id="${esc(it.id)}"><span class="sitem-n">${q}</span><span class="sitem-name">${esc(it.name)}</span>${q === 0 ? `<span class="sitem-lvl">vide</span>` : ""}</button>`; }
         return `<button type="button" class="sitem lvl-${i} who-${esc(it.who || "deux")}" data-act="sitem" data-id="${esc(it.id)}">${jar(i, t === "douche" || t === "sdb")}<span class="sitem-name">${esc(it.name)}</span>${i >= 2 ? `<span class="sitem-lvl">${i === 3 ? "vide" : "bientôt fini"}</span>` : ""}</button>`; };
-      const itemsIn = m => S.stock.filter(it => (meubleOf(it) || {}).id === m.id).sort((a, b) => lvlIndex(b) - lvlIndex(a) || a.name.localeCompare(b.name));
+      const itemsIn = m => S.stock.filter(it => (meubleOf(it) || {}).id === m.id).sort((a, b) => counts(m) ? (qtyOf(a) === 0) - (qtyOf(b) === 0) || a.name.localeCompare(b.name) : lvlIndex(b) - lvlIndex(a) || a.name.localeCompare(b.name));
       const body = (m, items) => items.length ? `<div class="shelves">${items.map(item).join("")}</div>`
         : `<div class="meuble-empty"><span>Rien pour l'instant.</span>${(m.suggest || []).length ? `<button class="mini" type="button" data-act="meuble-suggest" data-id="${esc(m.id)}">Ajouter ${esc(m.suggest.slice(0, 3).map(x => Array.isArray(x) ? x[0] : x).join(", ").toLowerCase())}…</button>` : ""}</div>`;
-      const meuble = m => { const items = itemsIn(m), low = items.filter(it => lvlIndex(it) >= 2).length;
+      const meuble = m => { const items = itemsIn(m), low = items.filter(isLow).length;
         const head = `<div class="meuble-head"><span class="meuble-name">${esc(m.name)}</span><span class="meuble-count">${low ? `<b>${low} à racheter</b>` : plural(items.length, "produit")}</span></div>`;
         const add = `<button type="button" class="meuble-add" data-act="meuble-add" data-id="${esc(m.id)}">+ Ajouter ici</button>`;
         if (m.type === "tiroirs") {
@@ -201,11 +213,12 @@ export function initPlus(ctx) {
     DEFAULT_MEUBLES.forEach(({ id, ...m }) => write(setDoc(refOf("meubles", id), m)));
   }
   function openMeubleEditor(m) {
-    ui.openEditor({ title: m ? `Modifier « ${m.name} »` : "Nouveau rangement", data: m || { room: "Cuisine", type: "placard", cat: "Épicerie" },
+    ui.openEditor({ title: m ? `Modifier « ${m.name} »` : "Nouveau rangement", data: m ? { ...m, count: counts(m) } : { room: "Cuisine", type: "placard", cat: "Épicerie", count: true },
       fields: [{ key: "name", label: "Nom du meuble", type: "text", required: true, placeholder: "Meuble du salon, placard de l'entrée…" },
         { key: "room", label: "Pièce", type: "text", required: true, placeholder: "Cuisine, salon, salle de bain…" },
         { key: "type", label: "Dessin", type: "select", options: MEUBLE_TYPES },
-        { key: "cat", label: "Rayon des courses pour ses produits", type: "select", options: ["Épicerie", "Surgelés", "Maison & hygiène", "Boissons", "Animaux", "Frais", "Autre"].map(c => [c, c]) }],
+        { key: "cat", label: "Rayon des courses pour ses produits", type: "select", options: ["Épicerie", "Surgelés", "Maison & hygiène", "Boissons", "Animaux", "Frais", "Autre"].map(c => [c, c]) },
+        { key: "count", label: "Compter les produits en nombre (au lieu de plein / à moitié / vide)", type: "checkbox" }],
       onSave: v => { v.room = cap(v.room.trim());
         if (m) write(updateDoc(refOf("meubles", m.id), v));
         else write(addDoc(pathOf("meubles"), { ...v, order: 10 + S.meubles.length, suggest: [] })); toast(m ? "Rangement modifié" : `${v.name} ajouté`); },
@@ -601,9 +614,11 @@ export function initPlus(ctx) {
       { key: "paidBy", label: "Payé par", type: "who2" }, { key: "split", label: "Répartition", type: "select", options: [["moitie", "Moitié-moitié"], ["autre", "Pour l'autre"]] }, { key: "date", label: "Date", type: "date" }] },
     factures: { title: "Modifier la facture", label: f => f.name, fields: [{ key: "name", label: "Nom", type: "text", required: true }, { key: "amount", label: "Montant (€)", type: "cents", required: true },
       { key: "freq", label: "Fréquence", type: "select", options: FREQ }, { key: "who", label: "Qui paie", type: "who" }, { key: "next", label: "Prochaine échéance", type: "date" }] },
-    stock: { title: "Modifier le produit", label: x => x.name, fields: () => [{ key: "name", label: "Produit", type: "text", required: true },
+    stock: { title: "Modifier le produit", label: x => x.name, fields: d => [{ key: "name", label: "Produit", type: "text", required: true },
       { key: "meuble", label: "Rangé dans", type: "select", options: meubles().map(m => [m.id, `${m.name} (${m.room})`]) },
-      { key: "level", label: "Niveau", type: "select", options: LEVELS }, { key: "who", label: "À qui", type: "who" }] },
+      counts(S.meubles.find(m => m.id === (d || {}).meuble)) ? { key: "qty", label: "Nombre", type: "number" } : { key: "level", label: "Niveau", type: "select", options: LEVELS },
+      { key: "who", label: "À qui", type: "who" }],
+      fix: v => { if (typeof v.qty === "number") { v.qty = Math.max(0, Math.round(v.qty)); v.level = v.qty > 0 ? "plein" : "vide"; } } },
     frigo: { title: "Modifier le produit", label: x => x.name, fields: [{ key: "name", label: "Produit", type: "text", required: true }, { key: "zone", label: "Étagère", type: "select", options: FRIGO_ZONES },
       { key: "qty", label: "Quantité", type: "number" }, { key: "dlc", label: "À consommer avant", type: "date" }], fix: v => { v.qty = Math.max(0, Math.round(v.qty || 0)); } },
     films: { title: "Modifier", label: x => x.title, fields: [{ key: "title", label: "Titre", type: "text", required: true }, { key: "type", label: "Type", type: "select", options: [["Film", "Film"], ["Série", "Série"]] },
@@ -623,7 +638,7 @@ export function initPlus(ctx) {
   const CREATE = {
     depenses: { title: "Nouvelle dépense", data: () => ({ paidBy: me(), split: "moitie", date: today() }), extra: { settled: false } },
     factures: { title: "Nouvelle facture", data: () => ({ freq: "mensuel", who: "deux", next: today() }) },
-    stock: { title: "Nouveau produit", data: () => ({ meuble: UI.meuble || (meubles()[0] || {}).id, level: "plein", who: "deux" }) },
+    stock: { title: "Nouveau produit", data: () => ({ meuble: UI.meuble || (meubles()[0] || {}).id, level: "plein", qty: 1, who: "deux" }) },
     frigo: { title: "Dans le frigo", data: () => ({ zone: "milieu", qty: 1, dlc: "" }), save: v => {
       v.qty = Math.max(1, Math.round(v.qty || 1));
       v.cat = frigoCatOf(v.name, ""); // sert seulement à choisir le rayon quand on le remet dans les courses
@@ -639,7 +654,8 @@ export function initPlus(ctx) {
   };
   function openCreate(k) {
     const c = CREATE[k], cfg = EDIT[k]; if (!c || !cfg) return;
-    ui.openEditor({ title: c.title, data: c.data(), fields: typeof cfg.fields === "function" ? cfg.fields() : cfg.fields, onSave: v => {
+    const d0 = c.data();
+    ui.openEditor({ title: c.title, data: d0, fields: typeof cfg.fields === "function" ? cfg.fields(d0) : cfg.fields, onSave: v => {
       if (cfg.fix) cfg.fix(v);
       if (c.save) c.save(v); else write(addDoc(pathOf(k), { ...v, ...(c.extra || {}), by: me(), at: Date.now() }));
       toast(`${cfg.label(v)} ajouté`);
@@ -647,7 +663,8 @@ export function initPlus(ctx) {
   }
   function openEdit(k, item) {
     const cfg = EDIT[k]; if (!cfg) return;
-    ui.openEditor({ title: cfg.title, data: k === "stock" ? { ...item, meuble: (meubleOf(item) || {}).id } : item, fields: typeof cfg.fields === "function" ? cfg.fields() : cfg.fields,
+    const d0 = k === "stock" ? { ...item, meuble: (meubleOf(item) || {}).id, qty: qtyOf(item) } : item;
+    ui.openEditor({ title: cfg.title, data: d0, fields: typeof cfg.fields === "function" ? cfg.fields(d0) : cfg.fields,
       onSave: v => { if (cfg.fix) cfg.fix(v); write(updateDoc(refOf(k, item.id), v)); },
       extra: [{ label: "Supprimer", danger: true, fn: () => ui.removeWithUndo(refOf(k, item.id), item, cfg.label(item)) }] });
   }
@@ -728,9 +745,14 @@ export function initPlus(ctx) {
       case "diapo": { const sv = S.souvenirs.find(x => x.id === id); if (sv) openDiapo(sv, +b.dataset.i || 0); break; }
       case "back": open(null); break;
       case "goto": ctx.showTab(k); break;
-      case "sitem": { const it = S.stock.find(x => x.id === id); if (!it) break; const cur = lvlIndex(it);
-        ui.openEditor({ title: it.name, data: {}, fields: [], extra: [
-          ...LEVELS.map(([v, l], i) => ({ label: `${i === cur ? "✓ " : ""}${l}${v === "vide" ? " (l'ajouter aux courses)" : ""}`, fn: () => setLevel(it, v) })),
+      case "sitem": { const it = S.stock.find(x => x.id === id); if (!it) break; const cur = lvlIndex(it), q = qtyOf(it), byCount = counts(meubleOf(it));
+        ui.openEditor({ title: byCount ? `${it.name} · ${q}` : it.name, data: {}, fields: [], extra: [
+          ...(byCount ? [
+            ...(q > 0 ? [{ label: `J'en ai pris 1 (il en restera ${q - 1})`, fn: () => setQty(it, q - 1) }] : []),
+            { label: `J'en ai rajouté 1 (il y en aura ${q + 1})`, fn: () => setQty(it, q + 1) },
+            { label: "Indiquer combien il y en a", fn: () => ui.openEditor({ title: it.name, data: { qty: q }, fields: [{ key: "qty", label: "Nombre", type: "number" }], onSave: v => setQty(it, v.qty || 0) }) },
+            ...(q > 0 ? [{ label: "C'est fini (l'ajouter aux courses)", danger: true, fn: () => setQty(it, 0) }] : [])
+          ] : LEVELS.map(([v, l], i) => ({ label: `${i === cur ? "✓ " : ""}${l}${v === "vide" ? " (l'ajouter aux courses)" : ""}`, fn: () => setLevel(it, v) }))),
           { label: "Déplacer dans un autre meuble", fn: () => ui.openEditor({ title: `Déplacer ${it.name}`, data: { meuble: (meubleOf(it) || {}).id },
             fields: [{ key: "meuble", label: "Vers", type: "select", options: meubles().map(m => [m.id, `${m.name} (${m.room})`]) }],
             onSave: v => { write(updateDoc(refOf("stock", it.id), { meuble: v.meuble, place: "" })); toast(`${it.name} déplacé`); } }) },
@@ -741,9 +763,9 @@ export function initPlus(ctx) {
       case "meuble-suggest": { const m = S.meubles.find(x => x.id === id); if (!m) break;
         const have = new Set(S.stock.map(x => x.name.toLowerCase())); let n = 0;
         (m.suggest || []).forEach(sg => { const [name, who] = Array.isArray(sg) ? sg : [sg, "deux"];
-          if (!have.has(name.toLowerCase())) { n++; write(addDoc(pathOf("stock"), { name, who, meuble: m.id, level: "plein", by: me(), at: Date.now() })); } });
+          if (!have.has(name.toLowerCase())) { n++; write(addDoc(pathOf("stock"), { name, who, meuble: m.id, level: "plein", ...(counts(m) ? { qty: 1 } : {}), by: me(), at: Date.now() })); } });
         toast(`${n} produits ajoutés dans ${m.name}`); break; }
-      case "stock-all-courses": { let n = 0; S.stock.filter(it => lvlIndex(it) >= 2).forEach(it => { if (addCourse(it.name, catOf(it))) n++; });
+      case "stock-all-courses": { let n = 0; S.stock.filter(isLow).forEach(it => { if (addCourse(it.name, catOf(it))) n++; });
         toast(n ? `${n} produit${n > 1 ? "s" : ""} ajouté${n > 1 ? "s" : ""} aux courses` : "Tout est déjà dans la liste"); break; }
       case "meubles-manage": ui.openEditor({ title: "Pièces et meubles", data: {}, fields: [], extra: [
           ...meubles().map(m => ({ label: `${m.name} · ${m.room}`, fn: () => openMeubleEditor(m) })),
@@ -994,9 +1016,9 @@ export function initPlus(ctx) {
     }
     const st = S.stock.find(x => sameName(x.name, name));
     if (st) {
-      write(updateDoc(refOf("stock", st.id), { level: "plein", at: Date.now() }));
-      const m = meubleOf(st);
-      return { k: "stock", id: st.id, prev: { level: st.level || "plein", at: st.at || 0 }, where: m ? m.name : "les rangements" };
+      const m = meubleOf(st), byCount = counts(m);
+      write(updateDoc(refOf("stock", st.id), byCount ? { qty: qtyOf(st) + 1, level: "plein", at: Date.now() } : { level: "plein", at: Date.now() }));
+      return { k: "stock", id: st.id, prev: { level: st.level || "plein", at: st.at || 0, ...(byCount ? { qty: qtyOf(st) } : {}) }, where: m ? m.name : "les rangements" };
     }
     if (cat === "Frais" || cat === "Fruits & légumes" || cat === "Boissons") {
       const id = newId();
@@ -1007,7 +1029,7 @@ export function initPlus(ctx) {
     const m = meubleFor(name, cat);
     if (m) {
       const id = newId();
-      write(setDoc(refOf("stock", id), { name, who: "deux", meuble: m.id, level: "plein", by: me(), at: Date.now() }));
+      write(setDoc(refOf("stock", id), { name, who: "deux", meuble: m.id, level: "plein", ...(counts(m) ? { qty: 1 } : {}), by: me(), at: Date.now() }));
       return { k: "stock", id, created: true, where: m.name };
     }
     return null;
