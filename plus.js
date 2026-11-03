@@ -217,6 +217,12 @@ export function initPlus(ctx) {
 
   // ----- Frigo : ce qu'il y a dedans, avec quantités et dates limites -----
   const FRIGO_CATS = ["Restes", "Viandes & poissons", "Produits laitiers", "Fruits & légumes", "Boissons", "Sauces & condiments", "Autre"];
+  // Les étagères du frigo de Thib et Eva. Les anciens produits (rangés par catégorie) trouvent leur étagère via CAT_TO_ZONE.
+  const FRIGO_ZONES = [["haut", "Étagère du haut"], ["milieu", "Étagère du milieu"], ["bas", "Étagère du bas"], ["tiroir", "Bac à légumes"],
+    ["porte1", "Porte · en haut"], ["porte2", "Porte · au milieu"], ["porte3", "Porte · en bas"]];
+  const CAT_TO_ZONE = { Restes: "haut", "Produits laitiers": "milieu", Autre: "milieu", "Viandes & poissons": "bas", "Fruits & légumes": "tiroir",
+    "Sauces & condiments": "porte1", Boissons: "porte3" };
+  const zoneOf = f => FRIGO_ZONES.some(z => z[0] === f.zone) ? f.zone : CAT_TO_ZONE[f.cat] || "milieu";
   const FRIGO_TO_COURSE = { "Viandes & poissons": "Frais", "Produits laitiers": "Frais", "Fruits & légumes": "Fruits & légumes", Boissons: "Boissons", "Sauces & condiments": "Épicerie", Restes: "Autre", Autre: "Frais" };
   const urgent = f => f.qty > 0 && f.dlc && daysUntil(f.dlc) <= 1;
   const urgentCount = () => S.frigo.filter(urgent).length;
@@ -236,14 +242,15 @@ export function initPlus(ctx) {
       const inside = S.frigo.filter(f => f.qty > 0);
       const finished = S.frigo.filter(f => !(f.qty > 0)).sort((a, b) => (b.at || 0) - (a.at || 0));
       const soon = inside.filter(urgent).sort((a, b) => a.dlc.localeCompare(b.dlc));
-      const byCat = c => inside.filter(f => (FRIGO_CATS.includes(f.cat) ? f.cat : "Autre") === c)
+      const byZone = z => inside.filter(f => zoneOf(f) === z)
         .sort((a, b) => (a.dlc || "9").localeCompare(b.dlc || "9") || a.name.localeCompare(b.name));
+      const zLabel = z => FRIGO_ZONES.find(x => x[0] === z)[1];
       const item = f => { const n = f.dlc ? daysUntil(f.dlc) : null;
         return `<button type="button" class="fitem${urgent(f) ? " urgent" : ""}" data-act="fitem" data-id="${esc(f.id)}">
           <span class="fitem-name">${esc(f.name)}</span>${f.qty > 1 ? `<span class="fitem-qty">${f.qty}</span>` : ""}
           ${n !== null && n <= 3 ? `<span class="fitem-dlc">${n < 0 ? "périmé" : n === 0 ? "aujourd'hui" : n === 1 ? "demain" : n + " j"}</span>` : ""}</button>`; };
-      const shelf = (c, cls = "") => { const items = byCat(c);
-        return `<div class="shelf ${cls}"><span class="shelf-label">${esc(c)}</span><div class="shelf-items">${items.length ? items.map(item).join("") : `<span class="shelf-empty">vide</span>`}</div></div>`; };
+      const shelf = (z, cls = "") => { const items = byZone(z);
+        return `<div class="shelf ${cls}"><span class="shelf-label">${esc(zLabel(z))}</span><div class="shelf-items">${items.length ? items.map(item).join("") : `<span class="shelf-empty">vide</span>`}</div></div>`; };
       const postit = (f, i) => { const n = daysUntil(f.dlc);
         return `<button type="button" class="postit" style="--r:${[-3, 2, -1.5, 3][i % 4]}deg" data-act="fitem" data-id="${esc(f.id)}">
           <span>À manger ${n < 0 ? "vite (périmé)" : n === 0 ? "aujourd'hui" : "demain"}</span><strong>${esc(f.name)}</strong></button>`; };
@@ -255,13 +262,13 @@ export function initPlus(ctx) {
           </div>
           <div class="fridge-body">
             <div class="fridge-inside">
-              ${shelf("Restes")}${shelf("Viandes & poissons")}${shelf("Produits laitiers")}${shelf("Autre")}
-              ${shelf("Fruits & légumes", "crisper")}
+              ${shelf("haut")}${shelf("milieu")}${shelf("bas")}
+              ${shelf("tiroir", "crisper")}
             </div>
             <div class="fridge-door">
               <span class="door-label">Dans la porte</span>
-              ${["Boissons", "Sauces & condiments"].map(c => { const items = byCat(c);
-                return `<div class="bin"><span class="shelf-label">${esc(c)}</span><div class="shelf-items">${items.length ? items.map(item).join("") : `<span class="shelf-empty">vide</span>`}</div></div>`; }).join("")}
+              ${[["porte1", "En haut"], ["porte2", "Au milieu"], ["porte3", "En bas"]].map(([z, l]) => { const items = byZone(z);
+                return `<div class="bin"><span class="shelf-label">${esc(l)}</span><div class="shelf-items">${items.length ? items.map(item).join("") : `<span class="shelf-empty">vide</span>`}</div></div>`; }).join("")}
             </div>
           </div>
         </div>
@@ -273,7 +280,7 @@ export function initPlus(ctx) {
     },
     submit() {
       const name = $("frigoName").value.trim(); if (!name) return;
-      const cat = $("frigoCat").value;
+      const cat = $("frigoCat") ? $("frigoCat").value : "Autre";
       const qty = Math.max(1, parseInt($("frigoQty").value, 10) || 1);
       const dlc = $("frigoDlc").value || (cat === "Restes" ? addDays(today(), 3) : "");
       // Même produit déjà dans le frigo (sans date différente) : on augmente la quantité.
@@ -597,7 +604,7 @@ export function initPlus(ctx) {
     stock: { title: "Modifier le produit", label: x => x.name, fields: () => [{ key: "name", label: "Produit", type: "text", required: true },
       { key: "meuble", label: "Rangé dans", type: "select", options: meubles().map(m => [m.id, `${m.name} (${m.room})`]) },
       { key: "level", label: "Niveau", type: "select", options: LEVELS }, { key: "who", label: "À qui", type: "who" }] },
-    frigo: { title: "Modifier le produit", label: x => x.name, fields: [{ key: "name", label: "Produit", type: "text", required: true }, { key: "cat", label: "Catégorie", type: "select", options: FRIGO_CATS.map(c => [c, c]) },
+    frigo: { title: "Modifier le produit", label: x => x.name, fields: [{ key: "name", label: "Produit", type: "text", required: true }, { key: "zone", label: "Étagère", type: "select", options: FRIGO_ZONES },
       { key: "qty", label: "Quantité", type: "number" }, { key: "dlc", label: "À consommer avant", type: "date" }], fix: v => { v.qty = Math.max(0, Math.round(v.qty || 0)); } },
     films: { title: "Modifier", label: x => x.title, fields: [{ key: "title", label: "Titre", type: "text", required: true }, { key: "type", label: "Type", type: "select", options: [["Film", "Film"], ["Série", "Série"]] },
       { key: "where", label: "Où le voir", type: "text" }, { key: "who", label: "Proposé par", type: "who" }] },
@@ -617,10 +624,12 @@ export function initPlus(ctx) {
     depenses: { title: "Nouvelle dépense", data: () => ({ paidBy: me(), split: "moitie", date: today() }), extra: { settled: false } },
     factures: { title: "Nouvelle facture", data: () => ({ freq: "mensuel", who: "deux", next: today() }) },
     stock: { title: "Nouveau produit", data: () => ({ meuble: UI.meuble || (meubles()[0] || {}).id, level: "plein", who: "deux" }) },
-    frigo: { title: "Dans le frigo", data: () => ({ cat: "Produits laitiers", qty: 1, dlc: "" }), save: v => {
-      v.qty = Math.max(1, Math.round(v.qty || 1)); if (!v.dlc && v.cat === "Restes") v.dlc = addDays(today(), 3);
+    frigo: { title: "Dans le frigo", data: () => ({ zone: "milieu", qty: 1, dlc: "" }), save: v => {
+      v.qty = Math.max(1, Math.round(v.qty || 1));
+      v.cat = frigoCatOf(v.name, ""); // sert seulement à choisir le rayon quand on le remet dans les courses
+      if (!v.dlc && /\breste/i.test(v.name)) v.dlc = addDays(today(), 3);
       const same = S.frigo.find(f => f.name.toLowerCase() === v.name.toLowerCase() && (f.dlc || "") === (v.dlc || ""));
-      if (same) write(updateDoc(refOf("frigo", same.id), { qty: (same.qty > 0 ? same.qty : 0) + v.qty, cat: v.cat, at: Date.now() }));
+      if (same) write(updateDoc(refOf("frigo", same.id), { qty: (same.qty > 0 ? same.qty : 0) + v.qty, zone: v.zone, at: Date.now() }));
       else write(addDoc(pathOf("frigo"), { ...v, by: me(), at: Date.now() }));
     } },
     films: { title: "À regarder", data: () => ({ type: "Film", who: me() }), extra: { seen: false } },
@@ -981,7 +990,7 @@ export function initPlus(ctx) {
     const f = S.frigo.find(x => sameName(x.name, name));
     if (f) {
       write(updateDoc(refOf("frigo", f.id), { qty: (f.qty > 0 ? f.qty : 0) + 1, at: Date.now() }));
-      return { k: "frigo", id: f.id, prev: { qty: f.qty || 0, at: f.at || 0 }, where: "le frigo" };
+      return { k: "frigo", id: f.id, prev: { qty: f.qty || 0, at: f.at || 0 }, where: "frigo · " + FRIGO_ZONES.find(z => z[0] === zoneOf(f))[1].toLowerCase() };
     }
     const st = S.stock.find(x => sameName(x.name, name));
     if (st) {
@@ -991,8 +1000,9 @@ export function initPlus(ctx) {
     }
     if (cat === "Frais" || cat === "Fruits & légumes" || cat === "Boissons") {
       const id = newId();
-      write(setDoc(refOf("frigo", id), { name, cat: frigoCatOf(name, cat), qty: 1, dlc: "", by: me(), at: Date.now() }));
-      return { k: "frigo", id, created: true, where: "le frigo" };
+      const fc = frigoCatOf(name, cat);
+      write(setDoc(refOf("frigo", id), { name, cat: fc, zone: CAT_TO_ZONE[fc] || "milieu", qty: 1, dlc: "", by: me(), at: Date.now() }));
+      return { k: "frigo", id, created: true, where: "frigo · " + FRIGO_ZONES.find(z => z[0] === (CAT_TO_ZONE[fc] || "milieu"))[1].toLowerCase() };
     }
     const m = meubleFor(name, cat);
     if (m) {
