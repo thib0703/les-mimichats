@@ -54,10 +54,28 @@ export function initPlus(ctx) {
     let b = 0;
     for (const d of S.depenses) {
       if (d.settled) continue;
-      const share = d.split === "autre" ? d.amount : Math.round(d.amount / 2);
-      b += d.paidBy === "thib" ? share : -share;
+      // Part que l'autre doit à celui qui a payé.
+      const pt = thibPct(d), owed = Math.round(d.amount * (d.paidBy === "thib" ? 100 - pt : pt) / 100);
+      b += d.paidBy === "thib" ? owed : -owed;
     }
     return b;
+  }
+  // Répartition : part de Thib en % (le reste pour Eva). Anciennes valeurs : "moitie" et "autre" (pour l'autre).
+  function thibPct(d) {
+    const m = /^p(\d{1,3})$/.exec(d.split || "");
+    if (m) return Math.max(0, Math.min(100, +m[1]));
+    if (d.split === "autre") return d.paidBy === "thib" ? 0 : 100;
+    return 50;
+  }
+  const SPLITS = [100, 90, 80, 75, 70, 60, 50, 40, 30, 25, 20, 10, 0].map(t => ["p" + t,
+    t === 100 ? `${MEMBRES.thib.nom} paie tout (pas de partage)` : t === 0 ? `${MEMBRES.eva.nom} paie tout (pas de partage)` :
+    t === 50 ? "Moitié-moitié (50/50)" : `${MEMBRES.thib.nom} ${t} % · ${MEMBRES.eva.nom} ${100 - t} %`]);
+  function splitText(d) {
+    const t = thibPct(d), payer = d.paidBy, other = payer === "thib" ? "eva" : "thib", otherPct = other === "thib" ? t : 100 - t;
+    if (t === 50) return "moitié-moitié";
+    if (otherPct === 0) return "pas de partage";
+    if (otherPct === 100) return "pour " + whoName(other);
+    return `${MEMBRES.thib.nom} ${t} % · ${MEMBRES.eva.nom} ${100 - t} %`;
   }
   function balanceText(b = balance()) {
     if (Math.abs(b) < 1) return "Vous êtes à égalité";
@@ -71,7 +89,7 @@ export function initPlus(ctx) {
       const done = S.depenses.filter(d => d.settled).sort((a, b) => (b.settledAt || 0) - (a.settledAt || 0)).slice(0, 40);
       const b = balance();
       const row = d => `<li class="row"><span class="txt">${esc(d.title)}<small>${esc(meta([d.date && FMT_DM.format(parse(d.date)),
-        d.split === "autre" ? "pour " + whoName(d.paidBy === "thib" ? "eva" : "thib") : "moitié-moitié"]))}</small></span>
+        splitText(d)]))}</small></span>
         <span class="amount">${esc(euro2(d.amount))}</span><span class="who ${esc(d.paidBy)}">${esc(whoName(d.paidBy))}</span>${d.settled ? "" : del("depenses", d.id, d.title)}</li>`;
       // La balance penche du côté de celui à qui on doit de l'argent.
       const ang = Math.max(-14, Math.min(14, b / 800)) * Math.PI / 180, dy = 80 * Math.sin(ang);
@@ -92,7 +110,7 @@ export function initPlus(ctx) {
     submit() {
       const title = $("depTitle").value.trim(), amount = cents($("depAmount").value);
       if (!title || !amount) { toast("Indique un nom et un montant."); return; }
-      write(addDoc(pathOf("depenses"), { title, amount, paidBy: $("depPaid").value, split: $("depSplit").value,
+      write(addDoc(pathOf("depenses"), { title, amount, paidBy: $("depPaid").value, split: "p50",
         date: $("depDate").value || today(), settled: false, by: me(), at: Date.now() }));
       $("depTitle").value = ""; $("depAmount").value = "";
     }
@@ -611,7 +629,7 @@ export function initPlus(ctx) {
   // ----- Fiches de modification par rubrique -----
   const EDIT = {
     depenses: { title: "Modifier la dépense", label: d => d.title, fields: [{ key: "title", label: "Dépense", type: "text", required: true }, { key: "amount", label: "Montant (€)", type: "cents", required: true },
-      { key: "paidBy", label: "Payé par", type: "who2" }, { key: "split", label: "Répartition", type: "select", options: [["moitie", "Moitié-moitié"], ["autre", "Pour l'autre"]] }, { key: "date", label: "Date", type: "date" }] },
+      { key: "paidBy", label: "Payé par", type: "who2" }, { key: "split", label: "Répartition", type: "select", options: SPLITS }, { key: "date", label: "Date", type: "date" }] },
     factures: { title: "Modifier la facture", label: f => f.name, fields: [{ key: "name", label: "Nom", type: "text", required: true }, { key: "amount", label: "Montant (€)", type: "cents", required: true },
       { key: "freq", label: "Fréquence", type: "select", options: FREQ }, { key: "who", label: "Qui paie", type: "who" }, { key: "next", label: "Prochaine échéance", type: "date" }] },
     stock: { title: "Modifier le produit", label: x => x.name, fields: d => [{ key: "name", label: "Produit", type: "text", required: true },
@@ -636,7 +654,7 @@ export function initPlus(ctx) {
   const GROUPS = [["La maison", ["frigo", "stock", "valise"]], ["L'argent", ["depenses", "factures"]], ["À deux", ["envies", "films", "sorties", "cadeaux", "souvenirs", "mots", "cycle"]]];
   // Ajout par fiche : mêmes champs que la modification, avec des valeurs de départ.
   const CREATE = {
-    depenses: { title: "Nouvelle dépense", data: () => ({ paidBy: me(), split: "moitie", date: today() }), extra: { settled: false } },
+    depenses: { title: "Nouvelle dépense", data: () => ({ paidBy: me(), split: "p50", date: today() }), extra: { settled: false } },
     factures: { title: "Nouvelle facture", data: () => ({ freq: "mensuel", who: "deux", next: today() }) },
     stock: { title: "Nouveau produit", data: () => ({ meuble: UI.meuble || (meubles()[0] || {}).id, level: "plein", qty: 1, who: "deux" }) },
     frigo: { title: "Dans le frigo", data: () => ({ zone: "milieu", qty: 1, dlc: "" }), save: v => {
@@ -663,7 +681,8 @@ export function initPlus(ctx) {
   }
   function openEdit(k, item) {
     const cfg = EDIT[k]; if (!cfg) return;
-    const d0 = k === "stock" ? { ...item, meuble: (meubleOf(item) || {}).id, qty: qtyOf(item) } : item;
+    const d0 = k === "stock" ? { ...item, meuble: (meubleOf(item) || {}).id, qty: qtyOf(item) }
+      : k === "depenses" ? { ...item, split: "p" + thibPct(item) } : item;
     ui.openEditor({ title: cfg.title, data: d0, fields: typeof cfg.fields === "function" ? cfg.fields(d0) : cfg.fields,
       onSave: v => { if (cfg.fix) cfg.fix(v); write(updateDoc(refOf(k, item.id), v)); },
       extra: [{ label: "Supprimer", danger: true, fn: () => ui.removeWithUndo(refOf(k, item.id), item, cfg.label(item)) }] });
