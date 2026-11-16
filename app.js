@@ -628,6 +628,7 @@ function openMealSheet(date, slot) {
     extra: [
       m.recetteId ? { label: "Voir la recette", fn: () => { showRepasView("recettes"); recApi && recApi.openRecipe(m.recetteId, date, slot); } }
         : { label: "Choisir une recette", fn: () => { showRepasView("recettes"); recApi && recApi.openForSlot(date, slot); } },
+      ...(m.recetteId ? [] : [{ label: "Pas d'idée ? Choisir avec le frigo", fn: () => { showRepasView("recettes"); recApi && recApi.openFridge(date, slot); } }]),
       { label: "Enregistrer et ajouter les ingrédients aux courses", fn: v => saveMealValues(date, slot, v, true) },
       ...(m.plat ? [{ label: "Effacer ce repas", danger: true, fn: () => {
         const before = { ...m };

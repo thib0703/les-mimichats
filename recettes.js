@@ -1,5 +1,6 @@
 // Les mimichats — recettes : idées intégrées + vos recettes, planification et liste de courses.
 import { IDEES } from "./recettes-idees.js";
+import { IDEES_PLUS } from "./recettes-plus.js";
 
 export function initRecettes(ctx) {
   const { $, esc, write, col, ref, addDoc, updateDoc, deleteDoc, onSnapshot, today, addDays, parse, cap, toast, addCourse } = ctx;
@@ -20,7 +21,7 @@ export function initRecettes(ctx) {
   const TONE = { Rapide: "t-a", "Végé": "t-b", "Léger": "t-c", "Réconfortant": "t-d", Dimanche: "t-e", "Pour les invités": "t-f" };
   const icon = r => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICO[r.tags[0]] || ICO._}</svg>`;
   const CLOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
-  const UI = { mode: "list", id: null, q: "", tag: "Toutes", homeFirst: false, target: null, servings: null, confirmDel: false, draft: null };
+  const UI = { mode: "list", id: null, q: "", tag: "Toutes", homeFirst: false, target: null, servings: null, confirmDel: false, draft: null, pick: [], from: "list", moreStock: false };
 
   // ---------- Outils ----------
   const fmtQ = q => { const r = q >= 10 ? Math.round(q) : Math.round(q * 4) / 4;
@@ -32,7 +33,11 @@ export function initRecettes(ctx) {
     .split(/\s+/).filter(w => w.length > 1).map(w => w.replace(/(s|x)$/, "")).filter(Boolean);
   // Deux noms désignent le même produit si tous les mots du plus court sont dans l'autre.
   const same = (a, b) => { const A = norm(a), B = norm(b); if (!A.length || !B.length) return false;
-    const [s, l] = A.length <= B.length ? [A, new Set(B)] : [B, new Set(A)]; return s.every(w => l.has(w)); };
+    const [s, l] = A.length <= B.length ? [A, new Set(B)] : [B, new Set(A)];
+    // « pâtes » ne doit pas valoir « pâte feuilletée », ni « lait » valoir « lait de coco ».
+    if (s.length === 1 && l.size > 1 && VAGUE.has(s[0])) return false;
+    return s.every(w => l.has(w)); };
+  const VAGUE = new Set(["pate", "lait", "fromage", "sauce", "jus", "creme", "farine"]);
   const BASICS = ["sel", "poivre", "eau"];
 
   // Où trouve-t-on cet ingrédient à la maison ?
@@ -70,7 +75,7 @@ export function initRecettes(ctx) {
     const n = m[3].trim(); return { q: isFinite(q) ? q : 0, u: (m[2] || "").trim(), n, c: guessCat(n) };
   }
 
-  const ideas = IDEES.map(r => ({ id: r.id, title: r.title, time: r.time, tags: r.tags, servings: 2, steps: r.steps, own: false,
+  const ideas = [...IDEES, ...IDEES_PLUS].map(r => ({ id: r.id, title: r.title, time: r.time, tags: r.tags, servings: 2, steps: r.steps, own: false,
     ingredients: r.ing.map(([q, u, n, c]) => ({ q, u, n, c })) }));
   const all = () => [...mine.map(r => ({ ...r, own: true, ingredients: r.ingredients || [], steps: r.steps || [], tags: r.tags || [] })), ...ideas];
   const find = id => all().find(r => r.id === id);
@@ -107,6 +112,7 @@ export function initRecettes(ctx) {
     return `${UI.target ? `<div class="target-bar"><span>Choisis une recette pour <strong>${esc(slotName(UI.target))}</strong></span><button class="linkbtn" type="button" data-r="cancel-target">Annuler</button></div>` : ""}
       <div class="rec-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><input type="search" id="recSearch" placeholder="Une recette, un ingrédient…" aria-label="Chercher" value="${esc(UI.q)}"><button class="btn" type="button" data-r="new">Créer</button></div>
       <div class="chips">${chips.map(c => `<button type="button" class="chip" aria-pressed="${c === UI.tag}" data-r="tag" data-v="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+      <button class="fr-cta" type="button" data-r="fridge"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M6 10h12M9 6v2M9 13v3"/></svg><span><strong>On n'a pas d'idée ?</strong>Choisis ce qu'il y a dans le frigo</span><b>›</b></button>
       <div class="rec-tools"><button type="button" class="chip home-chip" aria-pressed="${UI.homeFirst}" data-r="home-first"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M6 10h12M9 6v2M9 13v3"/></svg>Avec ce qu'on a</button>
         ${list.length > 1 ? `<button class="dice-btn" type="button" data-r="random"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><circle cx="8.5" cy="8.5" r="1.3"/><circle cx="15.5" cy="15.5" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="15.5" cy="8.5" r="1.3"/><circle cx="8.5" cy="15.5" r="1.3"/></svg>On mange quoi ?</button>` : ""}</div>
       ${list.length ? `<ul class="rec-grid">${list.map(card).join("")}</ul>`
@@ -138,6 +144,54 @@ export function initRecettes(ctx) {
       </div>`;
   }
 
+  // ---------- « Avec le frigo » : on choisit des ingrédients, l'appli propose des plats ----------
+  const SOFT = ["sel", "poivre", "eau", "huile", "huile d'olive"];
+  const soft = i => !i.q || SOFT.some(s => same(s, i.n));
+  const picked = n => UI.pick.some(p => same(p, n));
+  function suggestions() {
+    if (!UI.pick.length) return [];
+    const { frigo } = ctx.home();
+    const urgentNames = frigo.filter(f => f.qty > 0 && f.dlc && daysLeft(f.dlc) <= 2).map(f => f.name);
+    return all().map(r => {
+      const used = UI.pick.filter(p => r.ingredients.some(i => same(i.n, p)));
+      if (!used.length) return null;
+      const missing = r.ingredients.filter(i => !soft(i) && !UI.pick.some(p => same(p, i.n)) && !homeStatus(i.n).have);
+      const urgent = used.filter(u => urgentNames.some(n => same(n, u))).length;
+      return { r, used, missing, urgent };
+    }).filter(Boolean).sort((a, b) => b.used.length - a.used.length || a.missing.length - b.missing.length || b.urgent - a.urgent || (b.r.own - a.r.own) || a.r.time - b.r.time);
+  }
+  function daysLeft(d) { return Math.round((parse(d) - parse(today())) / 864e5); }
+  function renderFridge() {
+    const { frigo, stock } = ctx.home();
+    const inside = frigo.filter(f => f.qty > 0).sort((a, b) => (a.dlc || "9999").localeCompare(b.dlc || "9999") || a.name.localeCompare(b.name));
+    const seen = new Set(); const dedup = arr => arr.filter(x => { const k = norm(x.name).join(" "); if (!k || seen.has(k)) return false; seen.add(k); return true; });
+    const fr = dedup(inside), st = dedup(stock.filter(s => s.level !== "vide")).sort((a, b) => a.name.localeCompare(b.name));
+    const chip = (name, note) => `<button type="button" class="chip fr-chip${note ? " soon" : ""}" aria-pressed="${picked(name)}" data-r="pick" data-v="${esc(name)}">${esc(cap(name))}${note ? `<small>${esc(note)}</small>` : ""}</button>`;
+    const urgentNote = f => { if (!f.dlc) return ""; const n = daysLeft(f.dlc); return n < 0 ? "périmé ?" : n === 0 ? "aujourd'hui" : n === 1 ? "demain" : n === 2 ? "2 jours" : ""; };
+    const res = suggestions();
+    const ready = res.filter(x => !x.missing.length), almost = res.filter(x => x.missing.length && x.missing.length <= 2), more = res.filter(x => x.missing.length > 2).slice(0, 6);
+    const card = x => `<li class="fr-card" data-r="open" data-id="${esc(x.r.id)}" tabindex="0" role="button">
+        <span class="fr-title">${esc(x.r.title)}${x.r.own ? ` <span class="rc-mine">À nous</span>` : ""}</span>
+        <span class="fr-meta">${x.r.time ? `${CLOCK}${esc(x.r.time)} min` : ""}${x.r.tags[0] ? `<span>${esc(x.r.tags[0])}</span>` : ""}</span>
+        <span class="fr-used">Avec ${x.used.map(u => esc(u.toLowerCase())).join(", ")}${x.urgent ? ` <b>· finit ce qui presse</b>` : ""}</span>
+        ${x.missing.length ? `<span class="fr-miss">Il manque : ${x.missing.map(i => esc(i.n)).join(", ")}</span>` : `<span class="fr-ok">Tout est à la maison</span>`}
+        ${x.missing.length ? `<button type="button" class="mini fr-buy" data-r="buy-missing" data-id="${esc(x.r.id)}">+ courses</button>` : ""}</li>`;
+    const group = (title, list) => list.length ? `<h3 class="aisle-title fr-h">${title}<span>${list.length}</span></h3><ul class="fr-list">${list.map(card).join("")}</ul>` : "";
+    return `${UI.target ? `<div class="target-bar"><span>Une idée pour <strong>${esc(slotName(UI.target))}</strong></span><button class="linkbtn" type="button" data-r="cancel-target">Annuler</button></div>` : ""}
+      <div class="sub-page-head"><button type="button" class="back-btn" data-r="back" aria-label="Retour aux recettes">‹</button><h2>Avec le frigo</h2></div>
+      <p class="hint">Touche ce que tu veux cuisiner, l'appli te propose des plats avec la recette.</p>
+      <section class="aisle"><h3 class="aisle-title">Dans le frigo<span>${fr.length}</span></h3>
+        ${fr.length ? `<div class="chips">${fr.map(f => chip(f.name, urgentNote(f))).join("")}</div>` : `<p class="hint">Le frigo est vide dans l'appli. Ajoute un ingrédient ci-dessous.</p>`}
+        ${fr.some(f => urgentNote(f)) ? `<button class="linkbtn" type="button" data-r="pick-urgent">Choisir ce qui est à finir vite</button>` : ""}</section>
+      ${st.length ? `<section class="aisle"><button type="button" class="aisle-title fr-toggle" data-r="more-stock" aria-expanded="${UI.moreStock}">Dans les placards<span>${UI.moreStock ? "masquer" : st.length + " ›"}</span></button>
+        ${UI.moreStock ? `<div class="chips">${st.map(s => chip(s.name, "")).join("")}</div>` : ""}</section>` : ""}
+      <form class="rec-search fr-add" id="frAdd" autocomplete="off"><input type="text" id="frAddIn" placeholder="Autre ingrédient (ex. riz, œufs)" aria-label="Ajouter un ingrédient"><button class="btn" type="submit">Ajouter</button></form>
+      ${UI.pick.length ? `<div class="fr-picked"><span>Choisi :</span>${UI.pick.map(p => `<button type="button" class="chip" aria-pressed="true" data-r="pick" data-v="${esc(p)}">${esc(cap(p))} ✕</button>`).join("")}<button class="linkbtn" type="button" data-r="pick-clear">Tout enlever</button></div>` : ""}
+      ${!UI.pick.length ? `<div class="empty">Choisis un ou plusieurs ingrédients pour voir des idées de plats.</div>`
+        : res.length ? group("Prêt à cuisiner", ready) + group("Il manque une ou deux choses", almost) + group("Avec quelques courses", more)
+        : `<div class="empty">Aucune recette avec ${UI.pick.length > 1 ? "tous ces ingrédients" : "cet ingrédient"} pour l'instant.<br>Essaie d'en enlever un, ou crée votre recette.</div>`}`;
+  }
+
   function renderEdit() {
     const d = UI.draft;
     return `<div class="sub-page-head"><button type="button" class="back-btn" data-r="back" aria-label="Annuler">‹</button><h2>${d.id ? "Modifier la recette" : "Nouvelle recette"}</h2></div>
@@ -159,10 +213,11 @@ export function initRecettes(ctx) {
     preserve(() => {
       if (UI.mode === "edit" && UI.draft) root.innerHTML = renderEdit();
       else if (UI.mode === "detail" && find(UI.id)) root.innerHTML = renderDetail(find(UI.id));
+      else if (UI.mode === "frigo") root.innerHTML = renderFridge();
       else { UI.mode = "list"; root.innerHTML = renderList(); }
     });
   }
-  function go(mode, id) { UI.mode = mode; UI.id = id || null; UI.confirmDel = false; if (mode === "detail") UI.servings = null; render(); window.scrollTo(0, 0); }
+  function go(mode, id) { if (mode === "detail" && UI.mode !== "detail") UI.from = UI.mode === "frigo" ? "frigo" : "list"; UI.mode = mode; UI.id = id || null; UI.confirmDel = false; if (mode === "detail") UI.servings = null; render(); window.scrollTo(0, 0); }
 
   // ---------- Feuille « Planifier » avec vérification des ingrédients ----------
   let SH = null; // { r, date, slot, servings, have: {index: bool} }
@@ -221,7 +276,16 @@ export function initRecettes(ctx) {
     const a = b.dataset.r, r = UI.id ? find(UI.id) : null;
     switch (a) {
       case "open": go("detail", b.dataset.id); break;
-      case "back": go(UI.mode === "edit" && UI.draft?.id ? "detail" : "list", UI.mode === "edit" ? UI.draft?.id : null); break;
+      case "back": if (UI.mode === "detail" && UI.from === "frigo") go("frigo");
+        else go(UI.mode === "edit" && UI.draft?.id ? "detail" : "list", UI.mode === "edit" ? UI.draft?.id : null); break;
+      case "fridge": go("frigo"); break;
+      case "pick": { const v = b.dataset.v, i = UI.pick.findIndex(p => same(p, v)); if (i >= 0) UI.pick.splice(i, 1); else UI.pick.push(v); render(); break; }
+      case "pick-clear": UI.pick = []; render(); break;
+      case "pick-urgent": { const { frigo } = ctx.home(); frigo.filter(f => f.qty > 0 && f.dlc && daysLeft(f.dlc) <= 2).forEach(f => { if (!picked(f.name)) UI.pick.push(f.name); }); render(); break; }
+      case "more-stock": UI.moreStock = !UI.moreStock; render(); break;
+      case "buy-missing": { e.stopPropagation(); const x = suggestions().find(s => s.r.id === b.dataset.id); if (!x) break; let n = 0;
+        x.missing.forEach(i => { if (addCourse(cap(i.n), i.c || guessCat(i.n), qtyText(i, 1))) n++; });
+        toast(n ? `${n} article${n > 1 ? "s" : ""} ajouté${n > 1 ? "s" : ""} aux courses` : "Tout était déjà dans la liste"); render(); break; }
       case "tag": UI.tag = b.dataset.v; render(); break;
       case "home-first": UI.homeFirst = !UI.homeFirst; render(); break;
       case "random": { const rows = [...root.querySelectorAll(".rec-row")]; if (!rows.length) break;
@@ -240,9 +304,10 @@ export function initRecettes(ctx) {
       case "del-yes": if (r && r.own) { const { own, ...data } = r; ctx.ui.removeWithUndo(ref("recettes", r.id), data, r.title); go("list"); } break;
     }
   });
-  root.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches(".rec-row")) { e.preventDefault(); go("detail", e.target.dataset.id); } });
+  root.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches(".rec-row, .fr-card")) { e.preventDefault(); go("detail", e.target.dataset.id); } });
   root.addEventListener("input", e => { if (e.target.id === "recSearch") { UI.q = e.target.value; render(); } });
   root.addEventListener("submit", e => {
+    if (e.target.id === "frAdd") { e.preventDefault(); const v = $("frAddIn").value.trim(); if (v && !picked(v)) UI.pick.push(v); $("frAddIn").value = ""; render(); return; }
     if (e.target.id !== "recForm") return; e.preventDefault();
     const title = $("rTitle").value.trim(); if (!title) return;
     const ingredients = $("rIng").value.split("\n").map(s => s.trim()).filter(Boolean).map(parseLine);
@@ -266,6 +331,7 @@ export function initRecettes(ctx) {
     refresh: () => { render(); if (SH) renderSheet(); },
     // Depuis une case de la semaine : choisir une recette pour ce jour-là.
     openForSlot(date, slot) { UI.target = { date, slot }; go("list"); },
+    openFridge(date, slot) { UI.target = date ? { date, slot } : null; go("frigo"); },
     openRecipe(id, date, slot) { if (date) UI.target = { date, slot }; go("detail", id); },
     planFromSlot(id, date, slot, servings) { const r = find(id); if (r) openSheet(r, date, slot, servings); return !!r; }
   };

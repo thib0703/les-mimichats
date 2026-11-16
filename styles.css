@@ -1034,3 +1034,30 @@ body.no-scroll{overflow:hidden}
 .sitem-n{flex:none;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--fill);color:var(--fill-ink);display:grid;place-items:center;font:600 .78rem Fredoka,sans-serif;font-variant-numeric:tabular-nums}
 .sitem-count.lvl-3 .sitem-n{background:transparent;color:var(--late);box-shadow:inset 0 0 0 1.5px var(--late)}
 .sitem-count.who-thib .sitem-n{background:var(--thib);color:#FFFFFF} .sitem-count.who-eva .sitem-n{background:var(--eva);color:#FFFFFF}
+
+/* Recettes · « Avec le frigo » */
+.fr-cta{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--fill);color:var(--fill-ink);border:0;border-radius:var(--r);padding:12px 14px;cursor:pointer;font:inherit}
+.fr-cta svg{width:28px;height:28px;flex:none;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round}
+.fr-cta span{flex:1;display:grid;font-size:.86rem;opacity:.9}
+.fr-cta strong{font-size:1rem;opacity:1}
+.fr-cta b{font-size:1.4rem;font-weight:400}
+.fr-chip{display:inline-flex;align-items:baseline;gap:6px;padding:7px 13px;font-size:.9rem;color:var(--ink)}
+.fr-chip small{font-size:.72rem;color:var(--late);font-weight:600}
+.fr-chip.soon{border-color:var(--late)}
+.fr-chip[aria-pressed=true] small{color:inherit;opacity:.75}
+.fr-toggle{all:unset;cursor:pointer;display:flex;justify-content:space-between;align-items:baseline;width:100%}
+.fr-add{margin-top:2px}
+.fr-add input{flex:1;min-width:0;border:0;background:transparent;font:inherit;color:var(--ink);outline:none}
+.fr-picked{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:.84rem;color:var(--muted)}
+.fr-h{margin-top:6px}
+.fr-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.fr-card{position:relative;display:grid;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;cursor:pointer}
+.fr-card:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.fr-title{font-weight:700;font-size:1rem;padding-right:84px}
+.fr-meta{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-size:.75rem;color:var(--muted)}
+.fr-meta svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;vertical-align:-2px;margin-right:2px}
+.fr-used{font-size:.84rem}
+.fr-used b{color:var(--late);font-weight:600}
+.fr-miss{font-size:.82rem;color:var(--late)}
+.fr-ok{font-size:.82rem;font-weight:600}
+.fr-buy{position:absolute;top:12px;right:12px}
