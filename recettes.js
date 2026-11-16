@@ -28,16 +28,21 @@ export function initRecettes(ctx) {
     return ({ 0.25: "¼", 0.5: "½", 0.75: "¾" })[r] || String(r).replace(".", ","); };
   const qtyText = (i, f) => i.q ? (fmtQ(i.q * f) + (i.u ? " " + i.u : "")) : "";
   const ingText = (i, f) => { const q = qtyText(i, f); return q ? `${q} ${i.n}` : i.n; };
+  // Pluriel et féminin ignorés : « feuilleté », « feuilletée » et « feuilletées » donnent le même mot.
+  const stem = w => w.replace(/(s|x)$/, "").replace(/e+$/, "") || w;
   const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/œ/g, "oe").replace(/[^a-z0-9 ]/g, " ")
     .replace(/\b(de|d|du|des|la|le|les|l|a|au|aux|en|frais|fraiche|fraiches|rape|rapee|boite|tranche|tranches|sachet|cube|pave|paves|filet|filets|gousse|gousses|feuille|feuilles)\b/g, " ")
-    .split(/\s+/).filter(w => w.length > 1).map(w => w.replace(/(s|x)$/, "")).filter(Boolean);
+    .split(/\s+/).filter(w => w.length > 1).map(stem).filter(Boolean);
   // Deux noms désignent le même produit si tous les mots du plus court sont dans l'autre.
   const same = (a, b) => { const A = norm(a), B = norm(b); if (!A.length || !B.length) return false;
+    if (isPasta(A) && isPasta(B)) return true; // « pâtes » vaut pour spaghetti, tagliatelles, coquillettes…
     const [s, l] = A.length <= B.length ? [A, new Set(B)] : [B, new Set(A)];
     // « pâtes » ne doit pas valoir « pâte feuilletée », ni « lait » valoir « lait de coco ».
     if (s.length === 1 && l.size > 1 && VAGUE.has(s[0])) return false;
     return s.every(w => l.has(w)); };
-  const VAGUE = new Set(["pate", "lait", "fromage", "sauce", "jus", "creme", "farine"]);
+  const PASTA = new Set(["pate", "spaghetti", "tagliatelle", "coquillette", "penne", "fusilli", "macaroni", "linguine", "farfalle"].map(stem));
+  const isPasta = W => W.length === 1 && PASTA.has(W[0]);
+  const VAGUE = new Set(["pate", "lait", "fromage", "sauce", "jus", "creme", "farine"].map(stem));
   const BASICS = ["sel", "poivre", "eau"];
 
   // Où trouve-t-on cet ingrédient à la maison ?
@@ -61,7 +66,7 @@ export function initRecettes(ctx) {
   function guessCat(name) {
     const known = (ctx.getHabitues() || {})[String(name).toLowerCase()]; if (known?.cat) return known.cat;
     const words = norm(name);
-    for (const [cat, list] of CAT_WORDS) { const L = new Set(list.split(" ").map(w => w.replace(/(s|x)$/, ""))); if (words.some(w => L.has(w))) return cat; }
+    for (const [cat, list] of CAT_WORDS) { const L = new Set(list.split(" ").map(stem)); if (words.some(w => L.has(w))) return cat; }
     return "Autre";
   }
 
