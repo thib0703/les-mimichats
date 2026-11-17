@@ -447,7 +447,33 @@ exports.pasSallePadel = onRequest({ region: REGION }, async (req, res) => {
       const out = { _at: d._at }; for (const x of days) out[x] = d[x];
       t.set(ref, { json: JSON.stringify(out), at: Date.now() });
     });
-    return res.send(`OK : ${n.toLocaleString("fr-FR")} pas enregistrés pour le ${day}`);
+    await alerteSoir(u, day, n).catch(() => {});
+    res.set("Content-Type", "text/plain; charset=utf-8");
+    return res.send(`OK : ${n} pas enregistrés pour le ${day}`);
   }
   return res.status(403).send("Clé refusée : recopie le lien depuis Salle Padel > Réglages");
 });
+
+// Le soir (17 h 30 - 21 h 30), une seule fois par jour : « il te manque X pas », s'il reste du chemin.
+async function alerteSoir(u, day, n) {
+  const hm = parisLocal(new Date()).slice(11);
+  if (day !== parisLocal(new Date()).slice(0, 10) || hm < "17:30" || hm > "21:30") return;
+  const push = u.collection("push"), planRef = push.doc("plan");
+  const plan = await planRef.get();
+  let goal = plan.exists && (plan.get("stepGoals") || {})[day];
+  if (!goal) {
+    const h = await u.collection("data").doc("health").get();
+    try { goal = (h.exists && JSON.parse(h.get("json")).stepGoal) || 12000; } catch (e) { goal = 12000; }
+  }
+  const manque = goal - n;
+  if (manque < 300 || (plan.exists && plan.get("alertePas") === day)) return;
+  const devices = (await push.get()).docs.filter(d => d.id.startsWith("dev-") && d.get("token"));
+  if (!devices.length) return;
+  const min = Math.max(5, Math.round(manque / 100 / 5) * 5); // ~100 pas par minute de marche
+  await getMessaging().sendEachForMulticast({
+    tokens: devices.map(d => d.get("token")),
+    data: { title: `👟 Il te manque ${manque.toLocaleString("fr-FR")} pas`, body: `${n.toLocaleString("fr-FR")} / ${goal.toLocaleString("fr-FR")} aujourd'hui. Environ ${min} min de marche et c'est bouclé.`, url: "./#accueil", tag: "sp-pas-" + day },
+    webpush: { headers: { Urgency: "high", TTL: "7200" } }
+  });
+  await planRef.set({ alertePas: day }, { merge: true });
+}
