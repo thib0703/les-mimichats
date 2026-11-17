@@ -442,7 +442,9 @@ exports.pasSallePadel = onRequest({ region: REGION }, async (req, res) => {
       const s = await t.get(ref);
       let d = {};
       try { d = s.exists ? JSON.parse(s.get("json")) || {} : {}; } catch (e) { d = {}; }
-      d[day] = n; d._at = Date.now();
+      // Les pas ne font que monter dans la journée : un envoi plus bas (iPhone verrouillé, Santé illisible) est ignoré
+      if (n === 0 && d[day] > 0) return;
+      d[day] = Math.max(n, d[day] || 0); d._at = Date.now();
       const days = Object.keys(d).filter(x => !x.startsWith("_")).sort().slice(-400);
       const out = { _at: d._at }; for (const x of days) out[x] = d[x];
       t.set(ref, { json: JSON.stringify(out), at: Date.now() });
