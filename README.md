@@ -92,3 +92,15 @@ L'appli fonctionne sans cette étape. Elle débloque trois choses :
 - **Modifier** : touche le texte d'une ligne (course, événement, tâche, envie, dépense…) pour ouvrir sa fiche.
 - **Annuler** : après une suppression, le bouton « Annuler » reste quelques secondes en bas de l'écran.
 - **Sauvegarde** : Réglages → Télécharger une sauvegarde. Garde le fichier dans Fichiers, iCloud ou Google Drive. « Restaurer » remet son contenu sans rien effacer.
+
+## 11. Rappels de l'appli Salle Padel (à faire une fois, sur l'ordi)
+
+La fonction `rappelsSallePadel` (à la fin de `serveur/functions/index.js`) envoie les rappels de l'appli Salle Padel. Elle utilise uniquement la collection `sallePadel` et ne change rien aux mimichats.
+
+1. Récupère la dernière version du dépôt sur l'ordi (**Code → Download ZIP** sur GitHub, ou `git pull`).
+2. Ouvre un terminal dans le dossier `serveur`, puis tape :
+   ```
+   cd functions && npm install && cd ..
+   firebase deploy --only functions:rappelsSallePadel --project les-mimichats
+   ```
+3. Dans l'appli Salle Padel : **Réglages → Rappels → Activer les rappels**.

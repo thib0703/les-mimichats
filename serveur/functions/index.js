@@ -381,3 +381,40 @@ exports.rappelCycle = onSchedule({ schedule: "0 9 * * *", timeZone: "Europe/Pari
   if (remindEva) await sendTo("thib", { title: "Petit rappel", body: "Ton cycle recommence sûrement demain.", tag: "cycle" });
   if (remindThib) await sendTo("eva", { title: "Petit rappel", body: "Le cycle d'Eva recommence sûrement demain.", tag: "cycle" });
 });
+
+
+// ---------------------------------------------------------------------------------------------
+// Appli « Salle Padel » (thib0703.github.io/salle-padel) : rappels d'entraînement.
+// L'appli dépose ses rappels des prochains jours dans sallePadel/{uid}/push/plan
+// ({ items: [{ id, at (ms), title, body, url }] }) et ses appareils dans sallePadel/{uid}/push/dev-*.
+// Cette fonction envoie ceux dont l'heure est arrivée. Elle ne touche à rien des mimichats.
+exports.rappelsSallePadel = onSchedule({ schedule: "every 15 minutes", timeZone: "Europe/Paris", region: "europe-west1" }, async () => {
+  const now = Date.now(), from = now - 16 * 60 * 1000;
+  const users = await db.collection("sallePadel").listDocuments();
+  for (const u of users) {
+    const push = u.collection("push");
+    const planRef = push.doc("plan");
+    const plan = await planRef.get();
+    if (!plan.exists) continue;
+    const sent = plan.get("sent") || {};
+    const due = (plan.get("items") || []).filter(i => i && i.at > from && i.at <= now && !sent[i.id]);
+    if (!due.length) continue;
+    const devices = (await push.get()).docs.filter(d => d.id.startsWith("dev-") && d.get("token"));
+    if (!devices.length) continue;
+    for (const item of due) {
+      const res = await getMessaging().sendEachForMulticast({
+        tokens: devices.map(d => d.get("token")),
+        data: { title: String(item.title || "Salle Padel"), body: String(item.body || ""), url: String(item.url || "./"), tag: "sp-" + item.id },
+        webpush: { headers: { Urgency: "high", TTL: "21600" } }
+      });
+      await Promise.all(res.responses.map((r, i) => {
+        const code = r.error && r.error.code;
+        if (code === "messaging/registration-token-not-registered" || code === "messaging/invalid-argument") return devices[i].ref.delete();
+        return null;
+      }));
+      sent[item.id] = now;
+    }
+    for (const k of Object.keys(sent)) if (sent[k] < now - 10 * 864e5) delete sent[k];
+    await planRef.update({ sent });
+  }
+});
