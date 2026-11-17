@@ -418,3 +418,36 @@ exports.rappelsSallePadel = onSchedule({ schedule: "every 15 minutes", timeZone:
     await planRef.update({ sent });
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// Salle Padel : nombre de pas envoyé par le raccourci iPhone « Pas Salle Padel » (données de Santé).
+// GET …/pasSallePadel?k=CLÉ&pas=8423[&date=AAAA-MM-JJ]. La clé est créée par l'appli (sallePadel/{uid}/push/cles).
+// Les pas sont rangés dans sallePadel/{uid}/data/steps ({ json: "{\"2026-11-17\":8423,…}" }), lu par l'appli.
+exports.pasSallePadel = onRequest({ region: REGION }, async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const k = String(req.query.k || "");
+  // Le raccourci peut envoyer « 8 423 », « 8423,0 » ou « 8423.0 »
+  const raw = String(req.query.pas || "").replace(/[\s  ]/g, "").replace(",", ".");
+  const n = Math.round(parseFloat(raw));
+  if (!/^[a-f0-9]{24,64}$/.test(k)) return res.status(400).send("Lien incomplet : recopie-le depuis Salle Padel > Réglages");
+  if (!Number.isFinite(n) || n < 0 || n > 150000) return res.status(400).send("Nombre de pas illisible : « " + String(req.query.pas || "").slice(0, 20) + " »");
+  const q = String(req.query.date || "");
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(q) ? q : parisLocal(new Date()).slice(0, 10);
+  const users = await db.collection("sallePadel").listDocuments();
+  for (const u of users) {
+    const c = await u.collection("push").doc("cles").get();
+    if (!c.exists || c.get("pas") !== k) continue;
+    const ref = u.collection("data").doc("steps");
+    await db.runTransaction(async t => {
+      const s = await t.get(ref);
+      let d = {};
+      try { d = s.exists ? JSON.parse(s.get("json")) || {} : {}; } catch (e) { d = {}; }
+      d[day] = n; d._at = Date.now();
+      const days = Object.keys(d).filter(x => !x.startsWith("_")).sort().slice(-400);
+      const out = { _at: d._at }; for (const x of days) out[x] = d[x];
+      t.set(ref, { json: JSON.stringify(out), at: Date.now() });
+    });
+    return res.send(`OK : ${n.toLocaleString("fr-FR")} pas enregistrés pour le ${day}`);
+  }
+  return res.status(403).send("Clé refusée : recopie le lien depuis Salle Padel > Réglages");
+});

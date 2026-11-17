@@ -371,7 +371,7 @@ function rowEvent(occ, inList) {
     days > 1 ? (inList ? `jusqu'au ${FMT_DM.format(parse(addDays(occ.start, days - 1)))}` : `jour ${occ.dayIndex} sur ${days}`) : "",
     EV_RECUR[e.recur || "none"], EV_REMIND[e.remind || "none"]
   ].filter(Boolean).join(" · ");
-  return `<li class="row ev ev-${esc(e.who)}">
+  return `<li class="row ev ev-${esc(e.who)}${e.padel ? " ev-padel" : ""}">
       <span class="when">${cont ? "suite" : e.time ? esc(e.time) : "—"}${!cont && !e.time ? "<small>journée</small>" : !cont && e.endTime ? `<small>→ ${esc(e.endTime)}</small>` : ""}</span>
       <span class="txt" data-edit-ev="${esc(e.id)}" data-occ="${occ.start}">${esc(e.title)}${meta ? `<small>${esc(meta)}</small>` : ""}</span>
       <span class="who ${esc(e.who)}">${esc(whoName(e.who))}</span>
@@ -419,6 +419,7 @@ function renderEvents() {
     <ul class="list ev-list">${by[d].map(o => rowEvent(o, true)).join("")}</ul></section>`).join("");
 }
 
+const PADEL_CATS = ["P25", "P50", "P100", "P250", "P500", "P1000", "P2000", "P3000"];
 const EV_FIELDS = () => [
   { key: "title", label: "Événement", type: "text", required: true },
   { key: "date", label: "Date", type: "date", required: true },
@@ -428,8 +429,16 @@ const EV_FIELDS = () => [
   { key: "endTime", label: "Fin (facultatif)", type: "time" },
   { key: "who", label: "Pour qui", type: "who" },
   { key: "recur", label: "Se répète", type: "select", options: Object.entries({ none: "Non", ...EV_RECUR }).filter(([k]) => k !== "none" || true).map(([k, l]) => [k, l || "Non"]) },
-  { key: "remind", label: "Rappel", type: "select", options: [["none", "Aucun"], ["veille", "La veille à 20 h"], ["matin", "Le jour même à 8 h"], ["1h", "1 h avant"]] }
+  { key: "remind", label: "Rappel", type: "select", options: [["none", "Aucun"], ["veille", "La veille à 20 h"], ["matin", "Le jour même à 8 h"], ["1h", "1 h avant"]] },
+  // Tournoi de padel : partagé avec l'appli Salle Padel de Thib (elle lit et écrit les événements qui ont ce champ)
+  { key: "padel", label: "Tournoi de padel 🎾", type: "select", options: [["", "Non"], ...PADEL_CATS.map(c => [c, c])] }
 ];
+// « 🎾 P25 · Corbas » : même titre que dans Salle Padel, catégorie toujours à jour.
+function padelTitle(v) {
+  const rest = String(v.title || "").replace(/^🎾\s*/, "").replace(/^P\d{2,4}\b\s*·?\s*/, "").trim();
+  v.padelName = rest;
+  v.title = "🎾 " + v.padel + (rest && rest !== v.padel ? " · " + rest : "");
+}
 // Dans la fiche : « Toute la journée » coché grise les heures (champs ed3, ed4 et ed5).
 function bindAllDay() {
   const cb = document.getElementById("ed3"), t1 = document.getElementById("ed4"), t2 = document.getElementById("ed5");
@@ -438,6 +447,7 @@ function bindAllDay() {
   cb.addEventListener("change", sync); sync();
 }
 function cleanEvent(v) {
+  if (v.padel) padelTitle(v); else v.padel = "";
   if (v.endDate && v.endDate <= v.date) v.endDate = "";
   if (!v.recur) v.recur = "none"; if (!v.remind) v.remind = "none";
   // « Toute la journée » : pas d'horaire. Sans heure de début, pas d'heure de fin.
@@ -462,7 +472,7 @@ function handleEventClick(e) {
     else ui.removeWithUndo(ref("events", ev.id), ev, ev.title);
     return;
   }
-  ui.openEditor({ title: "Modifier l'événement", data: { recur: "none", remind: "none", endTime: "", ...ev, allDay: !ev.time }, fields: EV_FIELDS(),
+  ui.openEditor({ title: "Modifier l'événement", data: { recur: "none", remind: "none", endTime: "", padel: "", ...ev, allDay: !ev.time }, fields: EV_FIELDS(),
     onSave: v => write(updateDoc(ref("events", ev.id), cleanEvent(v))), extra: repeating ? [onlyThisDay, all] : [all] });
   bindAllDay();
 }
@@ -471,7 +481,7 @@ $("eventList").onclick = e => { const g = e.target.closest('[data-go="plus:cycle
 $("togglePast").onclick = () => { showPast = !showPast; renderEvents(); };
 // Ajouter un événement : fiche réglée sur le jour sélectionné.
 function newEvent(date) {
-  ui.openEditor({ title: "Nouvel événement", data: { date: date || (calView === "mois" ? selDay : today()), who: "deux", recur: "none", remind: "none", allDay: false, time: "", endTime: "" },
+  ui.openEditor({ title: "Nouvel événement", data: { date: date || (calView === "mois" ? selDay : today()), who: "deux", recur: "none", remind: "none", allDay: false, time: "", endTime: "", padel: "" },
     fields: EV_FIELDS(), onSave: v => {
       write(addDoc(col("events"), cleanEvent({ ...v, by: me, at: Date.now() })));
       toast(`${v.title} ajouté le ${FMT_DM.format(parse(v.date))}`);
